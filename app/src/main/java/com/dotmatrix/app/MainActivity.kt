@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.ViewModelProvider
 import com.dotmatrix.app.ui.navigation.AppNavigation
 import com.dotmatrix.app.ui.theme.DotMatrixAppTheme
@@ -26,6 +27,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Install the splash screen (must be before setContent)
+        installSplashScreen()
         
         // Correct way to instantiate AndroidViewModel
         val sharedViewModel = ViewModelProvider(this)[SharedConnectionViewModel::class.java]

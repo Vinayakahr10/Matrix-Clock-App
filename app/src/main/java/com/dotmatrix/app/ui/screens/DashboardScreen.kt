@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -138,10 +140,14 @@ fun DashboardScreen(
                 modifier = Modifier.padding(start = 4.dp, bottom = 12.dp)
             )
 
+            val haptic = LocalHapticFeedback.current
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { navController.navigate("devices") },
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        navController.navigate("devices")
+                    },
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = if (isConnected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.errorContainer
@@ -255,10 +261,14 @@ fun EnhancedActionCard(
     contentColor: Color,
     onClick: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     Card(
         modifier = modifier
             .height(110.dp)
-            .clickable { onClick() },
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onClick()
+            },
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {

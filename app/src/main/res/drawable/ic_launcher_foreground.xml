@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App Icon Foreground: LED matrix clock face with dot grid -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer rounded body of the clock display -->
+    <path
+        android:fillColor="#0EA5E9"
+        android:pathData="M22,28 Q22,22 28,22 L80,22 Q86,22 86,28 L86,80 Q86,86 80,86 L28,86 Q22,86 22,80 Z"/>
+
+    <!-- Clock colon separator -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51,42 Q51,40 53,40 Q55,40 55,42 Q55,44 53,44 Q51,44 51,42 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51,60 Q51,58 53,58 Q55,58 55,60 Q55,62 53,62 Q51,62 51,60 Z"/>
+
+    <!-- Left digit segments (stylized "1") -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:alpha="0.9"
+        android:pathData="M34,38 L42,38 Q43,38 43,39 L43,43 Q43,44 42,44 L34,44 Q33,44 33,43 L33,39 Q33,38 34,38 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:alpha="0.9"
+        android:pathData="M34,52 L42,52 Q43,52 43,53 L43,57 Q43,58 42,58 L34,58 Q33,58 33,57 L33,53 Q33,52 34,52 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:alpha="0.9"
+        android:pathData="M34,66 L42,66 Q43,66 43,67 L43,71 Q43,72 42,72 L34,72 Q33,72 33,71 L33,67 Q33,66 34,66 Z"/>
+
+    <!-- Right digit segments (stylized "2") -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:alpha="0.9"
+        android:pathData="M59,38 L67,38 Q68,38 68,39 L68,43 Q68,44 67,44 L59,44 Q58,44 58,43 L58,39 Q58,38 59,38 Z"/>
+    <path
+        android:fillColor="#E0F2FE"
+        android:alpha="0.6"
+        android:pathData="M59,52 L67,52 Q68,52 68,53 L68,57 Q68,58 67,58 L59,58 Q58,58 58,57 L58,53 Q58,52 59,52 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:alpha="0.9"
+        android:pathData="M59,66 L67,66 Q68,66 68,67 L68,71 Q68,72 67,72 L59,72 Q58,72 58,71 L58,67 Q58,66 59,66 Z"/>
+</vector>

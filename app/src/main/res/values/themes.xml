@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.DotMatrixApp" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Splash Screen theme (Android 12+) -->
+    <style name="Theme.DotMatrixApp.Starting" parent="Theme.SplashScreen">
+        <!-- Background of the splash screen -->
+        <item name="windowSplashScreenBackground">#0C1A2E</item>
+        <!-- Icon shown on the splash screen -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <!-- The actual app theme to switch to after splash -->
+        <item name="postSplashScreenTheme">@style/Theme.DotMatrixApp</item>
+    </style>
 </resources>
