@@ -2,28 +2,46 @@ package com.dotmatrix.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary brand colors
-val CustomCyan = Color(0xFF0EA5E9)
-val CustomCyanHover = Color(0xFF0284C7)
-val CustomCyanLight = Color(0xFFE0F2FE)
+// ── Google Material Design 3 Palette ──────────────────────────────────────────
 
-// Light theme neutrals
-val BackgroundLight = Color(0xFFF6F8FB)
-val CardBackground = Color(0xFFFFFFFF)
-val TextPrimary = Color(0xFF1E293B)
-val TextSecondary = Color(0xFF64748B)
+// Google Blue primary
+val GoogleBlue         = Color(0xFF1A73E8)
+val GoogleBlueHover    = Color(0xFF1557B0)
+val GoogleBlueContainer= Color(0xFFE8F0FE)
+val OnGoogleBlue       = Color(0xFFFFFFFF)
 
-// Dark theme neutrals
-val BackgroundDark = Color(0xFF0C1A2E)
-val CardBackgroundDark = Color(0xFF132338)
-val SurfaceDark = Color(0xFF1A2E44)
-val TextPrimaryDark = Color(0xFFF1F5F9)
-val TextSecondaryDark = Color(0xFF94A3B8)
-val CyanDark = Color(0xFF38BDF8)
-val CyanContainerDark = Color(0xFF082F49)
+// Light theme surfaces
+val BackgroundLight    = Color(0xFFF8F9FA)   // Google gray background
+val SurfaceLight       = Color(0xFFFFFFFF)   // pure white cards
+val SurfaceVariantLight= Color(0xFFF1F3F4)   // chip / tab background
+val OutlineLight       = Color(0xFFDADCE0)   // dividers / borders
 
-// Semantic colors
-val DangerRed = Color(0xFFEF4444)
-val DangerLight = Color(0xFFFEE2E2)
-val SuccessGreen = Color(0xFF10B981)
-val BorderLight = Color(0xFFE2E8F0)
+// Light theme text
+val TextPrimary        = Color(0xFF202124)   // Google "almost black"
+val TextSecondary      = Color(0xFF5F6368)   // Google secondary gray
+
+// Dark theme
+val BackgroundDark     = Color(0xFF121212)
+val SurfaceDark        = Color(0xFF1E1E1E)
+val SurfaceVariantDark = Color(0xFF2C2C2C)
+val GoogleBlueDark     = Color(0xFF7BAAF7)   // accessible on dark
+val GoogleBlueContainerDark = Color(0xFF1A3461)
+val TextPrimaryDark    = Color(0xFFE8EAED)
+val TextSecondaryDark  = Color(0xFF9AA0A6)
+
+// Semantic
+val DangerRed          = Color(0xFFD93025)   // Google red
+val DangerLight        = Color(0xFFFCE8E6)
+val SuccessGreen       = Color(0xFF137333)   // Google green
+val SuccessLight       = Color(0xFFE6F4EA)
+
+// Aliases kept for backward-compat
+val CustomCyan         = GoogleBlue
+val CustomCyanHover    = GoogleBlueHover
+val CustomCyanLight    = GoogleBlueContainer
+val CardBackground     = SurfaceLight
+val BorderLight        = OutlineLight
+val CyanDark           = GoogleBlueDark
+val CyanContainerDark  = GoogleBlueContainerDark
+val CardBackgroundDark = SurfaceDark
+val TextSecondaryDark  = TextSecondaryDark

@@ -12,37 +12,40 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val LightColorScheme = lightColorScheme(
-    primary = CustomCyan,
-    secondary = CustomCyanHover,
-    tertiary = CustomCyanLight,
-    background = BackgroundLight,
-    surface = CardBackground,
-    onPrimary = CardBackground,
-    onSecondary = CardBackground,
-    onTertiary = TextPrimary,
-    onBackground = TextPrimary,
-    onSurface = TextPrimary,
-    error = DangerRed
+    primary              = GoogleBlue,
+    onPrimary            = OnGoogleBlue,
+    primaryContainer     = GoogleBlueContainer,
+    onPrimaryContainer   = GoogleBlueHover,
+    secondary            = GoogleBlueHover,
+    onSecondary          = OnGoogleBlue,
+    secondaryContainer   = GoogleBlueContainer,
+    onSecondaryContainer = GoogleBlue,
+    background           = BackgroundLight,
+    onBackground         = TextPrimary,
+    surface              = SurfaceLight,
+    onSurface            = TextPrimary,
+    surfaceVariant       = SurfaceVariantLight,
+    onSurfaceVariant     = TextSecondary,
+    outline              = OutlineLight,
+    error                = DangerRed,
+    onError              = OnGoogleBlue
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary = CyanDark,
-    secondary = CustomCyan,
-    tertiary = CyanContainerDark,
-    background = BackgroundDark,
-    surface = CardBackgroundDark,
-    surfaceVariant = SurfaceDark,
-    onPrimary = BackgroundDark,
-    onSecondary = BackgroundDark,
-    onTertiary = TextPrimaryDark,
-    onBackground = TextPrimaryDark,
-    onSurface = TextPrimaryDark,
-    onSurfaceVariant = TextSecondaryDark,
-    error = DangerRed,
-    primaryContainer = CyanContainerDark,
-    onPrimaryContainer = CyanDark,
-    secondaryContainer = SurfaceDark,
-    onSecondaryContainer = TextPrimaryDark
+    primary              = GoogleBlueDark,
+    onPrimary            = BackgroundDark,
+    primaryContainer     = GoogleBlueContainerDark,
+    onPrimaryContainer   = GoogleBlueDark,
+    secondary            = GoogleBlueDark,
+    onSecondary          = BackgroundDark,
+    background           = BackgroundDark,
+    onBackground         = TextPrimaryDark,
+    surface              = SurfaceDark,
+    onSurface            = TextPrimaryDark,
+    surfaceVariant       = SurfaceVariantDark,
+    onSurfaceVariant     = TextSecondaryDark,
+    error                = DangerRed,
+    onError              = OnGoogleBlue
 )
 
 @Composable
@@ -63,7 +66,7 @@ fun DotMatrixAppTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
-        content = content
+        typography  = Typography,
+        content     = content
     )
 }

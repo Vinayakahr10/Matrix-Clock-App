@@ -1,174 +1,169 @@
 package com.dotmatrix.app.ui.screens
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Waves
-import androidx.compose.material.icons.filled.WifiTethering
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.dotmatrix.app.ui.theme.TextSecondary
 import com.dotmatrix.app.viewmodel.SharedConnectionViewModel
 
-data class VisMode(val id: String, val name: String, val icon: ImageVector)
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VisualizerScreen(sharedViewModel: SharedConnectionViewModel) {
-    val isPlaying by sharedViewModel.isVisualizerActive.collectAsState()
-    val activeMode by sharedViewModel.visualizerMode.collectAsState()
-    var sensitivity by remember { mutableFloatStateOf(50f) }
+    val isPlaying   by sharedViewModel.isVisualizerPlaying.collectAsState()
+    val mode        by sharedViewModel.visualizerMode.collectAsState()
+    val sensitivity by sharedViewModel.sensitivity.collectAsState()
+
+    val spinTransition = rememberInfiniteTransition(label = "spin")
+    val rotation by spinTransition.animateFloat(
+        initialValue   = 0f,
+        targetValue    = 360f,
+        animationSpec  = infiniteRepeatable(tween(3000, easing = LinearEasing)),
+        label          = "spin"
+    )
 
     val modes = listOf(
-        VisMode("bars", "Frequency Bars", Icons.Default.GraphicEq),
-        VisMode("wave", "Audio Waveform", Icons.Default.Waves),
-        VisMode("pulse", "Radial Pulse", Icons.Default.WifiTethering)
+        Triple("Frequency Bars", Icons.Outlined.Equalizer, "frequency"),
+        Triple("Audio Waveform", Icons.Outlined.Waves,     "waveform"),
+        Triple("Radial Pulse",   Icons.Outlined.RadioButtonChecked, "radial")
     )
 
-    val playButtonScale by animateFloatAsState(
-        targetValue = if (isPlaying) 1.05f else 1f,
-        animationSpec = tween(300),
-        label = "Play Button Scale"
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp)
-    ) {
-        Text(
-            text = "Music Visualizer",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-
-        // Play Card
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.05f) else Color.White
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            shape = RoundedCornerShape(16.dp)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title  = { Text("Music Visualizer", fontWeight = FontWeight.Medium) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier            = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 40.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
+            Spacer(Modifier.height(16.dp))
+
+            // ── Large circular play button ──────────────────────────────────
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(88.dp)) {
+                Surface(
+                    shape    = CircleShape,
                     modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
-                        .shadow(if (isPlaying) 16.dp else 4.dp, CircleShape)
+                        .size(88.dp)
+                        .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                         .clickable { sharedViewModel.toggleVisualizer() },
-                    contentAlignment = Alignment.Center
+                    color    = MaterialTheme.colorScheme.background
                 ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Stop" else "Play",
-                        tint = Color.White,
-                        modifier = Modifier.size(40.dp)
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector        = if (isPlaying) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                            contentDescription = if (isPlaying) "Stop" else "Start",
+                            tint               = MaterialTheme.colorScheme.primary,
+                            modifier           = Modifier.size(36.dp).let {
+                                if (isPlaying) it.rotate(rotation) else it
+                            }
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = if (isPlaying) "Visualizer Running" else "Start Visualizer",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (isPlaying) MaterialTheme.colorScheme.primary else TextSecondary
-                )
             }
-        }
+            Text(
+                if (isPlaying) "Stop Visualizer" else "Start Visualizer",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-        Text(
-            text = "Visualization Mode",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 12.dp)
-        )
+            Spacer(Modifier.height(4.dp))
 
-        // Modes Config
-        modes.forEach { mode ->
-            val selected = activeMode == mode.id
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .border(
-                        1.dp,
-                        if (selected) Color.Transparent else Color(0xFFE2E8F0),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .background(if (selected) MaterialTheme.colorScheme.primary else Color.White)
-                    .clickable { sharedViewModel.setVisualizerMode(mode.id) }
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // ── Mode section ────────────────────────────────────────────────
+            Text(
+                "Visualization Mode",
+                style    = MaterialTheme.typography.labelLarge,
+                color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(start = 4.dp)
+            )
+            modes.forEach { (label, icon, key) ->
+                val selected = mode == key
+                Card(
+                    modifier  = Modifier.fillMaxWidth().clickable { sharedViewModel.setVisualizerMode(key) },
+                    shape     = RoundedCornerShape(12.dp),
+                    colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 2.dp else 1.dp)
+                ) {
+                    Row(
+                        modifier          = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // left accent bar when selected
+                        if (selected) {
+                            Box(
+                                Modifier
+                                    .width(3.dp).height(24.dp)
+                                    .padding(end = 0.dp)
+                            ) {
+                                Surface(color = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxSize()) {}
+                            }
+                            Spacer(Modifier.width(12.dp))
+                        }
+                        Icon(
+                            icon, contentDescription = null,
+                            tint     = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            label,
+                            style      = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                            color      = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            modifier   = Modifier.weight(1f)
+                        )
+                        if (selected) {
+                            Icon(Icons.Outlined.Check, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+
+            // ── Sensitivity slider ──────────────────────────────────────────
+            Card(
+                modifier  = Modifier.fillMaxWidth(),
+                shape     = RoundedCornerShape(12.dp),
+                colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
-                Icon(
-                    imageVector = mode.icon,
-                    contentDescription = mode.name,
-                    tint = if (selected) Color.White else MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = mode.name,
-                    fontWeight = FontWeight.Medium,
-                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Sensitivity Slider
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Microphone Sensitivity", style = MaterialTheme.typography.titleMedium, fontSize = 16.sp)
-                    Text("${sensitivity.toInt()}%", fontWeight = FontWeight.Bold)
-                }
-                Slider(
-                    value = sensitivity,
-                    onValueChange = { 
-                        sensitivity = it
-                        sharedViewModel.setVisualizerSensitivity(it.toInt())
-                    },
-                    valueRange = 0f..100f,
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = Color(0xFFE2E8F0)
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Mic, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Microphone Sensitivity", style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Text("${sensitivity}%", color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Slider(
+                        value         = sensitivity.toFloat(),
+                        onValueChange = { sharedViewModel.setSensitivity(it.toInt()) },
+                        valueRange    = 0f..100f,
+                        modifier      = Modifier.fillMaxWidth().padding(top = 4.dp)
                     )
-                )
+                }
             }
+            Spacer(Modifier.height(16.dp))
         }
     }
 }

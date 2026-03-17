@@ -7,14 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,9 +17,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dotmatrix.app.ui.theme.TextSecondary
 import com.dotmatrix.app.viewmodel.Alarm
 import com.dotmatrix.app.viewmodel.SharedConnectionViewModel
 
@@ -35,157 +28,111 @@ enum class ActiveTab { Alarms, Timer, Stopwatch }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlarmTimerScreen(sharedViewModel: SharedConnectionViewModel) {
-    var activeTab by remember { mutableStateOf(ActiveTab.Alarms) }
-    val alarms by sharedViewModel.alarms.collectAsState()
-    var showAddDialog by remember { mutableStateOf(false) }
+    var activeTab        by remember { mutableStateOf(ActiveTab.Alarms) }
+    val alarms           by sharedViewModel.alarms.collectAsState()
+    var showAddDialog    by remember { mutableStateOf(false) }
+    val timerSeconds     by sharedViewModel.timerSeconds.collectAsState()
+    val isTimerRunning   by sharedViewModel.isTimerRunning.collectAsState()
+    val stopwatchMillis  by sharedViewModel.stopwatchMillis.collectAsState()
+    val isSwRunning      by sharedViewModel.isStopwatchRunning.collectAsState()
 
-    val timerSeconds by sharedViewModel.timerSeconds.collectAsState()
-    val isTimerRunning by sharedViewModel.isTimerRunning.collectAsState()
+    Column(Modifier.fillMaxSize()) {
 
-    val stopwatchMillis by sharedViewModel.stopwatchMillis.collectAsState()
-    val isStopwatchRunning by sharedViewModel.isStopwatchRunning.collectAsState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-    ) {
-        // Custom Tab Bar
+        // ── Tab row ─────────────────────────────────────────────────────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFFF1F5F9))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(4.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            TabButton(
-                title = "Alarms",
-                icon = Icons.Default.Alarm,
-                selected = activeTab == ActiveTab.Alarms,
-                onClick = { activeTab = ActiveTab.Alarms },
-                modifier = Modifier.weight(1f)
-            )
-            TabButton(
-                title = "Timer",
-                icon = Icons.Default.Timer,
-                selected = activeTab == ActiveTab.Timer,
-                onClick = { activeTab = ActiveTab.Timer },
-                modifier = Modifier.weight(1f)
-            )
-            TabButton(
-                title = "Stopwatch",
-                icon = Icons.Default.Schedule,
-                selected = activeTab == ActiveTab.Stopwatch,
-                onClick = { activeTab = ActiveTab.Stopwatch },
-                modifier = Modifier.weight(1f)
-            )
+            listOf(
+                Triple(ActiveTab.Alarms,    "Alarms",    Icons.Outlined.Alarm),
+                Triple(ActiveTab.Timer,     "Timer",     Icons.Outlined.Timer),
+                Triple(ActiveTab.Stopwatch, "Stopwatch", Icons.Outlined.Schedule)
+            ).forEach { (tab, label, icon) ->
+                TabPill(label, icon, selected = activeTab == tab, modifier = Modifier.weight(1f)) {
+                    activeTab = tab
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
 
         when (activeTab) {
-            ActiveTab.Alarms -> AlarmsContent(
-                alarms = alarms,
-                onToggle = { sharedViewModel.toggleAlarm(it) },
+            ActiveTab.Alarms    -> AlarmsContent(alarms,
+                onToggle   = { sharedViewModel.toggleAlarm(it) },
                 onAddClick = { showAddDialog = true },
-                onDelete = { sharedViewModel.deleteAlarm(it) }
-            )
-            ActiveTab.Timer -> TimerContent(
-                secondsLeft = timerSeconds,
-                isRunning = isTimerRunning,
+                onDelete   = { sharedViewModel.deleteAlarm(it) })
+            ActiveTab.Timer     -> TimerContent(timerSeconds, isTimerRunning,
                 onStart = { sharedViewModel.startTimer(it) },
-                onStop = { sharedViewModel.stopTimer() }
-            )
-            ActiveTab.Stopwatch -> StopwatchContent(
-                millis = stopwatchMillis,
-                isRunning = isStopwatchRunning,
+                onStop  = { sharedViewModel.stopTimer() })
+            ActiveTab.Stopwatch -> StopwatchContent(stopwatchMillis, isSwRunning,
                 onStart = { sharedViewModel.startStopwatch() },
                 onPause = { sharedViewModel.pauseStopwatch() },
-                onReset = { sharedViewModel.resetStopwatch() }
-            )
+                onReset = { sharedViewModel.resetStopwatch() })
         }
     }
 
     if (showAddDialog) {
         AddAlarmDialog(
             onDismiss = { showAddDialog = false },
-            onConfirm = { time, label ->
-                sharedViewModel.addAlarm(time, label)
-                showAddDialog = false
-            }
+            onConfirm = { time, label -> sharedViewModel.addAlarm(time, label); showAddDialog = false }
         )
     }
 }
 
 @Composable
-fun AlarmsContent(
-    alarms: List<Alarm>,
-    onToggle: (Alarm) -> Unit,
-    onAddClick: () -> Unit,
-    onDelete: (String) -> Unit
-) {
-    Button(
-        onClick = onAddClick,
-        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(52.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-            contentColor = MaterialTheme.colorScheme.primary
-        )
-    ) {
-        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-        Text("Add New Alarm", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-    }
-
-    if (alarms.isEmpty()) {
-        EmptyStateCard(
-            icon = Icons.Default.Alarm,
-            title = "No Alarms Set",
-            subtitle = "Tap \"Add New Alarm\" to schedule your first alarm"
-        )
-        return
-    }
-
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(alarms) { alarm ->
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(20.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = alarm.time,
-                            fontSize = 32.sp,
-                            letterSpacing = 1.sp,
-                            color = if (alarm.active) MaterialTheme.colorScheme.onSurface else TextSecondary,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = alarm.label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { onDelete(alarm.id) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Gray)
+fun AlarmsContent(alarms: List<Alarm>, onToggle: (Alarm) -> Unit, onAddClick: () -> Unit, onDelete: (String) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        OutlinedButton(
+            onClick    = onAddClick,
+            modifier   = Modifier.fillMaxWidth().height(48.dp),
+            shape      = RoundedCornerShape(12.dp)
+        ) {
+            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Add New Alarm", fontWeight = FontWeight.Medium)
+        }
+        Spacer(Modifier.height(12.dp))
+        if (alarms.isEmpty()) {
+            EmptyStateCard(
+                icon     = Icons.Outlined.Alarm,
+                title    = "No Alarms Set",
+                subtitle = "Tap \"Add New Alarm\" to schedule your first alarm"
+            )
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(alarms) { alarm ->
+                    Card(
+                        modifier  = Modifier.fillMaxWidth(),
+                        shape     = RoundedCornerShape(12.dp),
+                        colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Row(
+                            modifier          = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(alarm.time, fontSize = 28.sp, letterSpacing = 1.sp,
+                                    fontFamily = FontFamily.SansSerif,
+                                    color      = if (alarm.active) MaterialTheme.colorScheme.onSurface
+                                                 else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Light)
+                                Text(alarm.label, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onDelete(alarm.id) }) {
+                                    Icon(Icons.Outlined.Delete, contentDescription = "Delete",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                                }
+                                Switch(checked = alarm.active, onCheckedChange = { onToggle(alarm) })
+                            }
                         }
-                        Switch(
-                            checked = alarm.active,
-                            onCheckedChange = { onToggle(alarm) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color(0xFFE2E8F0)
-                            )
-                        )
                     }
                 }
             }
@@ -196,82 +143,44 @@ fun AlarmsContent(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddAlarmDialog(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
-    var time by remember { mutableStateOf("08:00") }
+    var time  by remember { mutableStateOf("08:00") }
     var label by remember { mutableStateOf("Wake up") }
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add Alarm") },
+        title            = { Text("Add Alarm") },
         text = {
             Column {
-                OutlinedTextField(
-                    value = time,
-                    onValueChange = { time = it },
-                    label = { Text("Time (HH:mm)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = label,
-                    onValueChange = { label = it },
-                    label = { Text("Label") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(value = time, onValueChange = { time = it },
+                    label = { Text("Time (HH:mm)") }, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = label, onValueChange = { label = it },
+                    label = { Text("Label") }, modifier = Modifier.fillMaxWidth())
             }
         },
-        confirmButton = {
-            Button(onClick = { onConfirm(time, label) }) {
-                Text("Add")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
+        confirmButton = { Button(onClick = { onConfirm(time, label) }) { Text("Add") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
 @Composable
 fun TimerContent(secondsLeft: Int, isRunning: Boolean, onStart: (Int) -> Unit, onStop: () -> Unit) {
-    val minutes = secondsLeft / 60
-    val seconds = secondsLeft % 60
-    val timeStr = "%02d:%02d".format(minutes, seconds)
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp, horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = timeStr,
-                fontSize = 64.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(
-                    onClick = onStop,
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F9), contentColor = MaterialTheme.colorScheme.onSurface)
-                ) {
-                    Text("Stop", fontSize = 16.sp)
+    val m = secondsLeft / 60; val s = secondsLeft % 60
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("%02d:%02d".format(m, s), fontSize = 60.sp, fontWeight = FontWeight.Light,
+                fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 28.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(8.dp)) {
+                    Text("Stop")
                 }
-                Button(
-                    onClick = { if (!isRunning) onStart(15 * 60) },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    enabled = !isRunning
-                ) {
-                    Text(if (isRunning) "Running" else "Start 15m", fontSize = 16.sp)
+                Button(onClick = { if (!isRunning) onStart(15 * 60) }, modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(8.dp), enabled = !isRunning) {
+                    Text(if (isRunning) "Running" else "Start 15m")
                 }
             }
         }
@@ -280,49 +189,26 @@ fun TimerContent(secondsLeft: Int, isRunning: Boolean, onStart: (Int) -> Unit, o
 
 @Composable
 fun StopwatchContent(millis: Long, isRunning: Boolean, onStart: () -> Unit, onPause: () -> Unit, onReset: () -> Unit) {
-    val centis = (millis % 1000) / 10
-    val seconds = (millis / 1000) % 60
-    val minutes = (millis / 60000) % 60
-    val timeStr = "%02d:%02d.%02d".format(minutes, seconds, centis)
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp, horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = timeStr,
-                fontSize = 56.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                IconButton(
-                    onClick = onReset,
-                    modifier = Modifier.size(52.dp).background(Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Reset")
+    val c = (millis % 1000) / 10; val s = (millis / 1000) % 60; val m = (millis / 60000) % 60
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("%02d:%02d.%02d".format(m, s, c), fontSize = 52.sp, fontWeight = FontWeight.Light,
+                fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 28.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                IconButton(onClick = onReset, modifier = Modifier.size(48.dp)
+                    .clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Reset")
                 }
-                
-                Button(
-                    onClick = { if (isRunning) onPause() else onStart() },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isRunning) Color(0xFFFEE2E2) else MaterialTheme.colorScheme.primary,
-                        contentColor = if (isRunning) Color(0xFFEF4444) else Color.White
-                    )
-                ) {
-                    Icon(if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (isRunning) "Pause" else "Start", fontSize = 16.sp)
+                Button(onClick = { if (isRunning) onPause() else onStart() },
+                    modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(8.dp)) {
+                    Icon(if (isRunning) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (isRunning) "Pause" else "Start")
                 }
             }
         }
@@ -330,80 +216,39 @@ fun StopwatchContent(millis: Long, isRunning: Boolean, onStart: () -> Unit, onPa
 }
 
 @Composable
-fun EmptyStateCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 48.dp),
-        contentAlignment = Alignment.Center
-    ) {
+fun EmptyStateCard(icon: ImageVector, title: String, subtitle: String) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(
-                modifier = Modifier.size(80.dp),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.size(72.dp)) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp)
-                    )
+                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
                 }
             }
-            Spacer(modifier = Modifier.height(20.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
+            Spacer(Modifier.height(16.dp))
+            Text(title, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(6.dp))
+            Text(subtitle, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = androidx.compose.ui.Modifier.padding(horizontal = 32.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
+                textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
         }
     }
 }
 
 @Composable
-fun TabButton(
-    title: String,
-    icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun TabPill(title: String, icon: ImageVector, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (selected) Color.White else Color.Transparent)
-            .clickable { onClick() }
-            .padding(vertical = 8.dp),
+        modifier = modifier.clip(RoundedCornerShape(6.dp))
+            .background(if (selected) MaterialTheme.colorScheme.surface else Color.Transparent)
+            .clickable { onClick() }.padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp).padding(end = 4.dp),
-                tint = if (selected) MaterialTheme.colorScheme.onSurface else TextSecondary
-            )
-            Text(
-                text = title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (selected) MaterialTheme.colorScheme.onSurface else TextSecondary
-            )
+            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp).padding(end = 2.dp),
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(4.dp))
+            Text(title, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
