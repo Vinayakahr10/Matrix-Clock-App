@@ -10,6 +10,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.dotmatrix.app.viewmodel.SharedConnectionViewModel
@@ -21,6 +23,7 @@ fun ClockSettingsScreen(sharedViewModel: SharedConnectionViewModel) {
     val brightness  by sharedViewModel.brightness.collectAsState()
     val animation   by sharedViewModel.animationStyle.collectAsState()
     val scrollText  by sharedViewModel.scrollText.collectAsState()
+    val haptic      = LocalHapticFeedback.current
 
     var localBrightness  by remember(brightness)  { mutableFloatStateOf(brightness) }
     var localAnimation   by remember(animation)   { mutableStateOf(animation) }
@@ -62,7 +65,10 @@ fun ClockSettingsScreen(sharedViewModel: SharedConnectionViewModel) {
                     }
                     Switch(
                         checked         = is24H,
-                        onCheckedChange = { sharedViewModel.setTimeFormat(it) }
+                        onCheckedChange = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            sharedViewModel.setTimeFormat(it) 
+                        }
                     )
                 }
             }
@@ -80,7 +86,12 @@ fun ClockSettingsScreen(sharedViewModel: SharedConnectionViewModel) {
                     }
                     Slider(
                         value         = localBrightness,
-                        onValueChange = { localBrightness = it },
+                        onValueChange = { 
+                            if ((it * 100).toInt() != (localBrightness * 100).toInt()) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                            localBrightness = it 
+                        },
                         onValueChangeFinished = { sharedViewModel.setBrightness(localBrightness) },
                         modifier      = Modifier.fillMaxWidth().padding(top = 4.dp)
                     )
@@ -112,6 +123,7 @@ fun ClockSettingsScreen(sharedViewModel: SharedConnectionViewModel) {
                                 DropdownMenuItem(
                                     text    = { Text(opt) },
                                     onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         localAnimation = opt
                                         sharedViewModel.setAnimationStyle(opt)
                                         expanded = false
@@ -139,7 +151,10 @@ fun ClockSettingsScreen(sharedViewModel: SharedConnectionViewModel) {
                     }
                     Switch(
                         checked         = scrollText,
-                        onCheckedChange = { sharedViewModel.setScrollText(it) }
+                        onCheckedChange = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            sharedViewModel.setScrollText(it) 
+                        }
                     )
                 }
             }
@@ -147,7 +162,10 @@ fun ClockSettingsScreen(sharedViewModel: SharedConnectionViewModel) {
             Spacer(Modifier.height(8.dp))
 
             Button(
-                onClick   = { /* apply already sent per-change */ },
+                onClick   = { 
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    /* apply already sent per-change */ 
+                },
                 modifier  = Modifier.fillMaxWidth().height(48.dp),
                 shape     = RoundedCornerShape(12.dp)
             ) {
