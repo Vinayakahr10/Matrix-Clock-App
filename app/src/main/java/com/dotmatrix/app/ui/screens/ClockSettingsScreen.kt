@@ -15,17 +15,19 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.dotmatrix.app.viewmodel.SharedConnectionViewModel
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClockSettingsScreen(sharedViewModel: SharedConnectionViewModel) {
+    val isConnected by sharedViewModel.isConnected.collectAsState()
     val is24H       by sharedViewModel.is24HourFormat.collectAsState()
     val brightness  by sharedViewModel.brightness.collectAsState()
     val animation   by sharedViewModel.animationStyle.collectAsState()
     val scrollText  by sharedViewModel.scrollText.collectAsState()
     val haptic      = LocalHapticFeedback.current
 
-    var localBrightness  by remember(brightness)  { mutableFloatStateOf(brightness) }
+    var localBrightness  by remember(brightness)  { mutableFloatStateOf(brightness.toFloat()) }
     var localAnimation   by remember(animation)   { mutableStateOf(animation) }
     var expanded         by remember { mutableStateOf(false) }
 
@@ -81,19 +83,28 @@ fun ClockSettingsScreen(sharedViewModel: SharedConnectionViewModel) {
                             tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
                         Spacer(Modifier.width(16.dp))
                         Text("Brightness", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                        Text("${(localBrightness * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium,
+                        Text("${localBrightness.toInt()}", style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary)
                     }
                     Slider(
                         value         = localBrightness,
                         onValueChange = { 
-                            if ((it * 100).toInt() != (localBrightness * 100).toInt()) {
+                            val snapped = it.roundToInt().toFloat()
+                            if (snapped.toInt() != localBrightness.toInt()) {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
-                            localBrightness = it 
+                            localBrightness = snapped
                         },
-                        onValueChangeFinished = { sharedViewModel.setBrightness(localBrightness) },
-                        modifier      = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        onValueChangeFinished = { sharedViewModel.setBrightness(localBrightness.toInt()) },
+                        modifier      = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        valueRange = 0f..15f,
+                        steps = 14,
+                        enabled = isConnected
+                    )
+                    Text(
+                        text = "Brightness: ${localBrightness.toInt()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

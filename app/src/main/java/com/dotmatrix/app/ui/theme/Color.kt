@@ -31,8 +31,8 @@ val TextSecondaryDark   = Color(0xFF9AA0A6)
 
 // Pitch Dark theme
 val BackgroundPitchDark      = Color(0xFF000000)
-val SurfacePitchDark         = Color(0xFF121212)
-val SurfaceVariantPitchDark  = Color(0xFF1E1E1E)
+val SurfacePitchDark         = Color(0xFF050505)
+val SurfaceVariantPitchDark  = Color(0xFF101010)
 val GoogleBluePitchDark      = Color(0xFF8AB4F8)
 val TextPrimaryPitchDark     = Color(0xFFF1F3F4)
 val TextSecondaryPitchDark   = Color(0xFFBDC1C6)

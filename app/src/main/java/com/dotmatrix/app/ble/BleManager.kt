@@ -5,7 +5,10 @@ import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Build
@@ -13,6 +16,8 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,10 +50,34 @@ data class ScannedDevice(
     val rssi: Int = -100
 )
 
+data class FirmwareAlarmState(
+    val time: String = "",
+    val enabled: Boolean = false
+)
+
+data class FirmwareTimerState(
+    val totalSeconds: Int = 0,
+    val status: String = "PAUSED"
+)
+
+data class FirmwareStopwatchState(
+    val totalSeconds: Int = 0,
+    val status: String = "PAUSED",
+    val lastLap: String? = null
+)
+
 class BleManager(private val context: Context) {
     companion object {
         private const val TAG = "BleManager"
         private const val DEFAULT_DEVICE_NAME = "DotMatrix Clock"
+        @Volatile
+        private var sharedInstance: BleManager? = null
+
+        fun shared(context: Context): BleManager {
+            return sharedInstance ?: synchronized(this) {
+                sharedInstance ?: BleManager(context.applicationContext).also { sharedInstance = it }
+            }
+        }
 
         // Standard Services
         val BATTERY_SERVICE_UUID: UUID = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb")
@@ -87,11 +116,16 @@ class BleManager(private val context: Context) {
     private var autoReconnectEnabled = false
     private var reconnectJob: Job? = null
     private var reconnectAttempt = 0
-    private val maxReconnectAttempts = 50
+    private val maxReconnectAttempts = Int.MAX_VALUE
     private val reconnectScanWindowMs = 10000L
+    private var receiverRegistered = false
 
     private val _isReconnecting = MutableStateFlow(false)
     val isReconnecting: StateFlow<Boolean> = _isReconnecting.asStateFlow()
+
+    init {
+        registerSystemStateReceivers()
+    }
 
     // ── Public state flows ────────────────────────────────────────────────────
     private val _isConnected = MutableStateFlow(false)
@@ -128,6 +162,45 @@ class BleManager(private val context: Context) {
 
     private val _humidity = MutableStateFlow<Float?>(null)
     val humidity: StateFlow<Float?> = _humidity.asStateFlow()
+
+    private val _currentMode = MutableStateFlow("CLOCK")
+    val currentMode: StateFlow<String> = _currentMode.asStateFlow()
+
+    private val _currentClockTool = MutableStateFlow("CLOCK")
+    val currentClockTool: StateFlow<String> = _currentClockTool.asStateFlow()
+
+    private val _brightnessValue = MutableStateFlow<Int?>(null)
+    val brightnessValue: StateFlow<Int?> = _brightnessValue.asStateFlow()
+
+    private val _alarmState = MutableStateFlow<FirmwareAlarmState?>(null)
+    val alarmState: StateFlow<FirmwareAlarmState?> = _alarmState.asStateFlow()
+
+    private val _timerState = MutableStateFlow(FirmwareTimerState())
+    val timerState: StateFlow<FirmwareTimerState> = _timerState.asStateFlow()
+
+    private val _stopwatchState = MutableStateFlow(FirmwareStopwatchState())
+    val stopwatchState: StateFlow<FirmwareStopwatchState> = _stopwatchState.asStateFlow()
+
+    private val _visualizerSource = MutableStateFlow("DEVICE")
+    val visualizerSource: StateFlow<String> = _visualizerSource.asStateFlow()
+
+    private val _visualizerStyle = MutableStateFlow("BARS")
+    val visualizerStyle: StateFlow<String> = _visualizerStyle.asStateFlow()
+
+    private val _messageAnimationStyle = MutableStateFlow("NONE")
+    val messageAnimationStyle: StateFlow<String> = _messageAnimationStyle.asStateFlow()
+
+    private val _deviceEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val deviceEvents: SharedFlow<String> = _deviceEvents
+
+    private val _connectionReadyEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val connectionReadyEvents: SharedFlow<Unit> = _connectionReadyEvents
+
+    private val _deviceTimeFormat24 = MutableStateFlow<Boolean?>(null)
+    val deviceTimeFormat24: StateFlow<Boolean?> = _deviceTimeFormat24.asStateFlow()
+
+    private val _timeFormatStatusMessage = MutableStateFlow<String?>(null)
+    val timeFormatStatusMessage: StateFlow<String?> = _timeFormatStatusMessage.asStateFlow()
 
     // ── OTA State ─────────────────────────────────────────────────────────────
     private val _otaStatusMessage = MutableStateFlow("")
@@ -294,6 +367,9 @@ class BleManager(private val context: Context) {
             _isReconnecting.value = false
             return
         }
+        if (reconnectJob?.isActive == true) {
+            return
+        }
 
         _isReconnecting.value = true
         val delayMs = (2000L * (1L shl reconnectAttempt.coerceAtMost(4))).coerceAtMost(30000L)
@@ -303,7 +379,9 @@ class BleManager(private val context: Context) {
             delay(delayMs)
             reconnectAttempt++
             if (!hasBluetoothPermissions() || !isBluetoothEnabled() || !isLocationEnabled()) {
-                _isReconnecting.value = false
+                Log.d(TAG, "Reconnect deferred; waiting for permissions/Bluetooth/location to become available")
+                reconnectJob = null
+                scheduleReconnect()
                 return@launch
             }
 
@@ -319,11 +397,13 @@ class BleManager(private val context: Context) {
                 bluetoothAdapter?.bluetoothLeScanner?.startScan(null, settings, scanCallback)
             } catch (e: SecurityException) {
                 _isScanning.value = false
-                _isReconnecting.value = false
+                reconnectJob = null
+                scheduleReconnect()
                 return@launch
             }
 
             delay(reconnectScanWindowMs)
+            reconnectJob = null
 
             if (!_isConnected.value && autoReconnectEnabled) {
                 stopScan()
@@ -343,6 +423,49 @@ class BleManager(private val context: Context) {
         if (addressMatches || nameMatches || fallbackNameMatches) {
             Log.d(TAG, "Reconnect scan matched ${device.address} ($resolvedName), reconnecting")
             connect(device, resolvedName)
+        }
+    }
+
+    private fun registerSystemStateReceivers() {
+        if (receiverRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                addAction(LocationManager.MODE_CHANGED_ACTION)
+            }
+        }
+        try {
+            context.registerReceiver(systemStateReceiver, filter)
+            receiverRegistered = true
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register system state receiver", e)
+        }
+    }
+
+    private val systemStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (!autoReconnectEnabled || _isConnected.value) return
+            when (intent?.action) {
+                BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                    val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
+                    if (state == BluetoothAdapter.STATE_ON) {
+                        Log.d(TAG, "Bluetooth turned on, retrying auto reconnect")
+                        reconnectAttempt = 0
+                        cancelReconnect()
+                        scheduleReconnect()
+                    }
+                }
+                LocationManager.PROVIDERS_CHANGED_ACTION,
+                LocationManager.MODE_CHANGED_ACTION -> {
+                    if (isLocationEnabled()) {
+                        Log.d(TAG, "Location services available, retrying auto reconnect")
+                        reconnectAttempt = 0
+                        cancelReconnect()
+                        scheduleReconnect()
+                    }
+                }
+            }
         }
     }
 
@@ -628,8 +751,10 @@ class BleManager(private val context: Context) {
                 
                 // Automatically send startup commands
                 scope.launch {
-                    delay(1500) // Ensure services and notifications are ready
-                    
+                    delay(500)
+                    _connectionReadyEvents.tryEmit(Unit)
+                    delay(1000) // Ensure services and notifications are ready
+
                     // Priority 2: If 2A26 read didn't work yet or as extra insurance
                     if (_firmwareVersion.value == "Unknown" || _firmwareVersion.value.isNullOrEmpty()) {
                         writeDataSync("VERSION?")
@@ -641,6 +766,14 @@ class BleManager(private val context: Context) {
                     writeDataSync("SENSOR?")
                     delay(300)
                     writeDataSync("OTA_STATUS")
+                    delay(300)
+                    writeDataSync("TIMEFMT?")
+                    delay(300)
+                    writeDataSync("VIZSRC?")
+                    delay(300)
+                    writeDataSync("VIZSTYLE?")
+                    delay(300)
+                    writeDataSync("MSGANIM?")
                 }
             } else {
                 _error.value = BleError.SERVICE_NOT_FOUND
@@ -699,6 +832,127 @@ class BleManager(private val context: Context) {
                         if (status == "SECURE") {
                              _otaStatusMessage.value = "Connection Secured"
                         }
+                        when (status) {
+                            "MESSAGE_UPDATED" -> _deviceEvents.tryEmit("Message updated on your clock")
+                            "TIME_SYNCED" -> _deviceEvents.tryEmit("Time synced successfully")
+                            "TIME_SYNC_INVALID" -> _deviceEvents.tryEmit("Time sync was rejected by the clock")
+                            "BRIGHTNESS_UPDATED" -> _deviceEvents.tryEmit("Brightness updated")
+                            "BRIGHTNESS_INVALID" -> _deviceEvents.tryEmit("Brightness value was rejected")
+                            "ALARM_UPDATED" -> _deviceEvents.tryEmit("Alarm updated")
+                            "ALARM_INVALID" -> _deviceEvents.tryEmit("Alarm update was rejected")
+                            "TIMER_UPDATED" -> _deviceEvents.tryEmit("Timer updated")
+                            "TIMER_INVALID" -> _deviceEvents.tryEmit("Timer update was rejected")
+                            "SW_UPDATED" -> _deviceEvents.tryEmit("Stopwatch updated")
+                            "SW_INVALID" -> _deviceEvents.tryEmit("Stopwatch update was rejected")
+                            "VIZSRC_UPDATED" -> _deviceEvents.tryEmit("Visualizer source updated")
+                            "VIZSRC_INVALID" -> _deviceEvents.tryEmit("Visualizer source was rejected")
+                            "VIZSTYLE_UPDATED" -> _deviceEvents.tryEmit("Visualizer style updated")
+                            "VIZSTYLE_INVALID" -> _deviceEvents.tryEmit("Visualizer style was rejected")
+                            "MSGANIM_UPDATED" -> _deviceEvents.tryEmit("Message animation updated")
+                            "MSGANIM_INVALID" -> _deviceEvents.tryEmit("Message animation was rejected")
+                            "VIZFRAME_UPDATED" -> _deviceEvents.tryEmit("Phone mic visualizer frame sent")
+                            "VIZFRAME_INVALID" -> _deviceEvents.tryEmit("Visualizer frame was rejected")
+                            "ALARM_TRIGGERED" -> _deviceEvents.tryEmit("Alarm triggered on your clock")
+                            "TIME_FORMAT_UPDATED" -> {
+                                _timeFormatStatusMessage.value = "Time format updated"
+                                _deviceEvents.tryEmit("Time format updated")
+                            }
+                            "TIME_FORMAT_INVALID" -> {
+                                _timeFormatStatusMessage.value = "Invalid time format selected"
+                                _deviceEvents.tryEmit("Invalid time format selected")
+                            }
+                            "SECURE" -> _deviceEvents.tryEmit("Connection secured")
+                        }
+                    }
+                    msg.startsWith("VIZSRC:") -> {
+                        val source = msg.removePrefix("VIZSRC:").trim().uppercase()
+                        if (source == "DEVICE" || source == "PHONE") {
+                            _visualizerSource.value = source
+                        }
+                    }
+                    msg.startsWith("VIZSTYLE:") -> {
+                        val style = msg.removePrefix("VIZSTYLE:").trim().uppercase()
+                        if (style == "BARS" || style == "WAVE" || style == "RADIAL") {
+                            _visualizerStyle.value = style
+                        }
+                    }
+                    msg.startsWith("MSGANIM:") -> {
+                        val style = msg.removePrefix("MSGANIM:").trim().uppercase()
+                        if (style == "NONE" || style == "WAVE" || style == "SCROLL" || style == "RAIN") {
+                            _messageAnimationStyle.value = style
+                        }
+                    }
+                    msg.startsWith("TIMEFMT:") -> {
+                        when (msg.removePrefix("TIMEFMT:").trim()) {
+                            "24" -> {
+                                _deviceTimeFormat24.value = true
+                                _timeFormatStatusMessage.value = "24-hour format active"
+                            }
+                            "12" -> {
+                                _deviceTimeFormat24.value = false
+                                _timeFormatStatusMessage.value = "12-hour format active"
+                            }
+                        }
+                    }
+                    msg.startsWith("CTOOL:") -> {
+                        val tool = msg.removePrefix("CTOOL:").trim().uppercase()
+                        if (tool in listOf("TIME", "CLOCK", "ALARM", "TIMER", "STOPWATCH")) {
+                            _currentClockTool.value = if (tool == "TIME") "CLOCK" else tool
+                        }
+                    }
+                    msg.startsWith("BRIGHTNESS:") -> {
+                        _brightnessValue.value = msg.removePrefix("BRIGHTNESS:").trim().toIntOrNull()
+                    }
+                    msg.startsWith("ALARM:") -> {
+                        val parts = msg.removePrefix("ALARM:").split(",")
+                        if (parts.size >= 2) {
+                            val time = parts[0].trim()
+                            val enabled = parts[1].trim().uppercase() == "ON"
+                            _alarmState.value = FirmwareAlarmState(time = time, enabled = enabled)
+                        }
+                    }
+                    msg.startsWith("TIMER:") -> {
+                        val parts = msg.removePrefix("TIMER:").split(",")
+                        if (parts.size >= 2) {
+                            parseClockDurationToSeconds(parts[0].trim())?.let { seconds ->
+                                _timerState.value = FirmwareTimerState(
+                                    totalSeconds = seconds,
+                                    status = parts[1].trim().uppercase()
+                                )
+                            }
+                        }
+                    }
+                    msg.startsWith("SW:LAP,") -> {
+                        val lap = msg.removePrefix("SW:LAP,").trim()
+                        _stopwatchState.value = _stopwatchState.value.copy(lastLap = lap)
+                    }
+                    msg.startsWith("SW:") -> {
+                        val parts = msg.removePrefix("SW:").split(",")
+                        if (parts.size >= 2) {
+                            parseClockDurationToSeconds(parts[0].trim())?.let { seconds ->
+                                _stopwatchState.value = _stopwatchState.value.copy(
+                                    totalSeconds = seconds,
+                                    status = parts[1].trim().uppercase()
+                                )
+                            }
+                        }
+                    }
+                    msg.startsWith("BTN:") -> {
+                        when (msg.removePrefix("BTN:").trim()) {
+                            "MODE" -> _deviceEvents.tryEmit("Mode command sent")
+                            "NEXT" -> _deviceEvents.tryEmit("Next command sent")
+                            "BACK" -> _deviceEvents.tryEmit("Back command sent")
+                            "SELECT" -> _deviceEvents.tryEmit("OK command sent")
+                            "IGNORED" -> _deviceEvents.tryEmit("Clock ignored the action because the menu is closed")
+                            "UNKNOWN" -> _deviceEvents.tryEmit("Clock did not recognize that button command")
+                        }
+                    }
+                    msg.startsWith("MODE:") -> {
+                        val mode = msg.removePrefix("MODE:").trim()
+                        if (mode.isNotEmpty()) {
+                            _currentMode.value = mode
+                            _deviceEvents.tryEmit("Clock mode: ${mode.lowercase().replaceFirstChar { it.uppercase() }}")
+                        }
                     }
                     // Priority 2: VERSION:v1.0.1-dev
                     msg.startsWith("VERSION:") -> {
@@ -740,11 +994,19 @@ class BleManager(private val context: Context) {
                                          }
                                     }
                                     "BAT" -> _batteryLevel.value = value.toIntOrNull()
+                                    "BRIGHT" -> _brightnessValue.value = value.toIntOrNull()
                                     "T" -> _temperature.value = value.toFloatOrNull()
                                     "H" -> _humidity.value = value.toFloatOrNull()
+                                    "CTOOL" -> {
+                                        val normalizedTool = value.uppercase()
+                                        if (normalizedTool in listOf("CLOCK", "ALARM", "TIMER", "STOPWATCH")) {
+                                            _currentClockTool.value = normalizedTool
+                                        }
+                                    }
                                 }
                             }
                         }
+                        _deviceEvents.tryEmit("Device info refreshed")
                     }
                     msg.startsWith("BATTERY:") -> {
                         _batteryLevel.value = msg.removePrefix("BATTERY:").trim().toIntOrNull()
@@ -755,6 +1017,15 @@ class BleManager(private val context: Context) {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error parsing TX message: $message", e)
+            }
+        }
+
+        private fun parseClockDurationToSeconds(value: String): Int? {
+            val parts = value.split(":").map { it.trim().toIntOrNull() ?: return null }
+            return when (parts.size) {
+                2 -> parts[0] * 60 + parts[1]
+                3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
+                else -> null
             }
         }
 

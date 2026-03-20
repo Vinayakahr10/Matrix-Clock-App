@@ -77,6 +77,10 @@ class MainActivity : ComponentActivity() {
             permissions.add(Manifest.permission.BLUETOOTH_ADVERTISE)
         }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         val missingPermissions = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }

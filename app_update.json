@@ -1,10 +1,10 @@
 {
-  "versionName": "1.0.1",
-  "versionCode": 2,
-  "apkUrl": "https://github.com/Vinayakahr10/Matrix-Clock-App/releases/download/v1.0.1/app-release.apk",
+  "versionName": "1.0.2",
+  "versionCode": 3,
+  "apkUrl": "https://github.com/Vinayakahr10/Matrix-Clock-App/releases/download/v1.0.2/app-release.apk",
   "notes": [
-    "Improved auto reconnect behavior after temporary BLE outages.",
-    "Added background phone-mic visualizer support with a foreground service.",
-    "Saved app display and visualizer preferences now restore after reconnect."
+    "Improved timer and stopwatch control syncing with firmware.",
+    "Improved auto reconnect and automatic time sync behavior.",
+    "Improved background phone-mic visualizer support and saved settings restore."
   ]
 }

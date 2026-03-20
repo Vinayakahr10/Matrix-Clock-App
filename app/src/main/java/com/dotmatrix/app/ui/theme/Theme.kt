@@ -91,6 +91,7 @@ fun DotMatrixAppTheme(
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
     val systemInDark = isSystemInDarkTheme()
     val isDark = when (themeMode) {
         ThemeMode.LIGHT      -> false
@@ -101,12 +102,25 @@ fun DotMatrixAppTheme(
 
     val colorScheme = when (themeMode) {
         ThemeMode.PITCH_DARK -> PitchDarkColorScheme
-        ThemeMode.DARK       -> DarkColorScheme
-        ThemeMode.LIGHT      -> LightColorScheme
+        ThemeMode.DARK       -> {
+            when {
+                dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                    dynamicDarkColorScheme(context)
+                }
+                else -> DarkColorScheme
+            }
+        }
+        ThemeMode.LIGHT      -> {
+            when {
+                dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                    dynamicLightColorScheme(context)
+                }
+                else -> LightColorScheme
+            }
+        }
         ThemeMode.SYSTEM     -> {
             when {
                 dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                    val context = LocalContext.current
                     if (systemInDark) dynamicDarkColorScheme(context)
                     else dynamicLightColorScheme(context)
                 }
@@ -121,7 +135,11 @@ fun DotMatrixAppTheme(
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
+            window.navigationBarColor = colorScheme.background.toArgb()
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !isDark
+                isAppearanceLightNavigationBars = !isDark
+            }
         }
     }
 
