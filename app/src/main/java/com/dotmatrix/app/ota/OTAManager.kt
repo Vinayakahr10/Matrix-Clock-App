@@ -176,9 +176,11 @@ class OTAManager(private val context: Context) {
                     if (!expectedMd5.isNullOrBlank()) {
                         val actualMd5 = calculateMD5(file)
                         if (!actualMd5.equals(expectedMd5.trim(), ignoreCase = true)) {
+                            val errorMsg = "Checksum mismatch!\nExpected: ${expectedMd5.trim()}\nActual: $actualMd5"
+                            Log.e("OTAManager", errorMsg)
                             file.delete()
                             return@withContext OTAOperationResult(
-                                errorMessage = "Downloaded firmware checksum did not match"
+                                errorMessage = "Downloaded firmware checksum did not match (MD5 mismatch)"
                             )
                         }
                     }

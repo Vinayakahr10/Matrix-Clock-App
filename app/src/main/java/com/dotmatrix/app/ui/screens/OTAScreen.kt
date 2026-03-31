@@ -1,7 +1,5 @@
 package com.dotmatrix.app.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -17,11 +15,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dotmatrix.app.viewmodel.OTAState
@@ -36,114 +38,126 @@ fun OTAScreen(otaViewModel: OTAViewModel) {
     val downloadProgress  by otaViewModel.downloadProgress.collectAsState()
     val errorMessage      by otaViewModel.errorMessage.collectAsState()
     val haptic            = LocalHapticFeedback.current
-    val importFirmwareLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            otaViewModel.uploadLocalFirmware(uri)
-        }
-    }
+
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     LaunchedEffect(Unit) {
         if (state == OTAState.Idle) otaViewModel.checkForUpdates()
     }
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title  = { Text("Firmware Update", fontWeight = FontWeight.SemiBold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            LargeTopAppBar(
+                title = { 
+                    Text(
+                        "Firmware", 
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.displaySmall
+                    ) 
+                },
+                scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.largeTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
+                )
             )
         },
         bottomBar = {
             if (state != OTAState.Checking && state != OTAState.NoUpdate) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    tonalElevation = 8.dp,
-                    shadowElevation = 16.dp
+                    color = MaterialTheme.colorScheme.background,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp).navigationBarsPadding(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 24.dp)
+                            .navigationBarsPadding()
                     ) {
                         if (state == OTAState.Downloading || state == OTAState.Installing) {
-                            Row(
+                            // Immersive Progress Bar
+                            Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                Text(
-                                    text = if (state == OTAState.Downloading) "Downloading..." else "Installing...",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "${(downloadProgress * 100).toInt()}%",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (state == OTAState.Downloading) "Downloading Update..." else "Transferring to Clock...",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "${(downloadProgress * 100).toInt()}%",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(24.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxHeight()
+                                            .fillMaxWidth(fraction = downloadProgress)
+                                            .clip(CircleShape)
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    colors = listOf(
+                                                        MaterialTheme.colorScheme.primary,
+                                                        MaterialTheme.colorScheme.tertiary
+                                                    )
+                                                )
+                                            )
+                                    )
+                                }
                             }
-                            LinearProgressIndicator(
-                                progress = { downloadProgress },
-                                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                            )
                         } else {
                             val buttonText = when (state) {
                                 OTAState.UpdateAvailable -> "Download Update"
-                                OTAState.ReadyToInstall -> "Upload to Device"
+                                OTAState.ReadyToInstall -> "Upload to Clock"
                                 OTAState.Success -> "Update Successful"
                                 OTAState.Error -> if (releaseInfo == null) "Retry Check" else "Retry Download"
                                 else -> "Update Firmware"
                             }
                             
                             val isEnabled = state != OTAState.Success
+                            val buttonShape = RoundedCornerShape(24.dp)
                             
                             Button(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    if (state == OTAState.UpdateAvailable) {
-                                        otaViewModel.downloadUpdate()
-                                    } else if (state == OTAState.ReadyToInstall) {
-                                        otaViewModel.startInstall()
-                                    } else if (state == OTAState.Error) {
-                                        otaViewModel.retry()
-                                    }
+                                    if (state == OTAState.UpdateAvailable) otaViewModel.downloadUpdate()
+                                    else if (state == OTAState.ReadyToInstall) otaViewModel.startInstall()
+                                    else if (state == OTAState.Error) otaViewModel.retry()
                                 },
-                                modifier = Modifier.fillMaxWidth().height(56.dp),
-                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth().height(60.dp),
+                                shape = buttonShape,
                                 enabled = isEnabled,
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (state == OTAState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    containerColor = if (state == OTAState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
                                 )
                             ) {
                                 Icon(
-                                    imageVector = if (state == OTAState.Error) Icons.Outlined.Refresh else Icons.Outlined.SystemUpdate,
-                                    contentDescription = null
+                                    imageVector = if (state == OTAState.Error) Icons.Outlined.Refresh else Icons.Outlined.RocketLaunch,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp)
                                 )
                                 Spacer(Modifier.width(12.dp))
-                                Text(buttonText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            }
-
-                            if (state != OTAState.Success) {
-                                OutlinedButton(
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        importFirmwareLauncher.launch(arrayOf("*/*"))
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                                    shape = RoundedCornerShape(16.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.UploadFile,
-                                        contentDescription = null
-                                    )
-                                    Spacer(Modifier.width(12.dp))
-                                    Text(
-                                        text = "Import BIN From Device",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                Text(buttonText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
                             }
                         }
                     }
@@ -155,80 +169,125 @@ fun OTAScreen(otaViewModel: OTAViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 24.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // ── Version Status Card ─────────────────────────────────────────
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val isUpToDate = currentVersion.replace("v", "").trim() == 
-                                         (releaseInfo?.version?.replace("v", "")?.trim() ?: currentVersion.replace("v", "").trim())
-                        
-                        val statusColor = when (state) {
-                            OTAState.Error -> MaterialTheme.colorScheme.error
-                            OTAState.Success -> Color(0xFF10B981)
-                            else -> if (isUpToDate) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
-                        }
-                        
-                        val statusIcon = when (state) {
-                            OTAState.Error -> Icons.Outlined.ErrorOutline
-                            OTAState.Success -> Icons.Outlined.CheckCircle
-                            else -> if (isUpToDate) Icons.Outlined.CheckCircle else Icons.Outlined.Update
-                        }
+            val isUpToDate = currentVersion.replace("v", "").trim() == 
+                             (releaseInfo?.version?.replace("v", "")?.trim() ?: currentVersion.replace("v", "").trim())
+            
+            val statusColor = when (state) {
+                OTAState.Error -> MaterialTheme.colorScheme.error
+                OTAState.Success -> Color(0xFF10B981)
+                else -> if (isUpToDate) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
+            }
 
-                        Surface(
-                            color = statusColor.copy(alpha = 0.1f),
-                            shape = CircleShape,
-                            modifier = Modifier.size(40.dp)
+            // ── Atmospheric Hero Status Card ─────────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(32.dp))
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                statusColor.copy(alpha = 0.15f),
+                                statusColor.copy(alpha = 0.02f)
+                            ),
+                            radius = 600f
+                        )
+                    )
+                    .background(MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "heroPulse")
+                    val iconScale by infiniteTransition.animateFloat(
+                        initialValue = 0.95f, targetValue = 1.05f,
+                        animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                        label = "iconScale"
+                    )
+                    
+                    val statusIcon = when (state) {
+                        OTAState.Error -> Icons.Outlined.ErrorOutline
+                        OTAState.Success -> Icons.Outlined.CheckCircle
+                        else -> if (isUpToDate) Icons.Outlined.Verified else Icons.Outlined.SystemUpdateAlt
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(96.dp)
+                            .clip(CircleShape)
+                            .background(statusColor.copy(alpha = 0.1f))
+                            .graphicsLayer { scaleX = iconScale; scaleY = iconScale },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier.size(64.dp).clip(CircleShape).background(statusColor.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(statusIcon, null, tint = statusColor, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                        
-                        Spacer(Modifier.width(16.dp))
-                        
-                        Column {
-                            Text(
-                                text = when (state) {
-                                    OTAState.Error -> "Update Failed"
-                                    OTAState.Success -> "Successfully Updated"
-                                    else -> if (isUpToDate) "System is up to date" else "Update Available"
-                                },
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = when (state) {
-                                    OTAState.Error -> "Something went wrong. Please try again."
-                                    OTAState.Success -> "Your device is now running the latest firmware."
-                                    else -> if (isUpToDate) "You have the latest firmware" else "New version ${releaseInfo?.version} is ready"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (state == OTAState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Icon(statusIcon, null, tint = statusColor, modifier = Modifier.size(32.dp))
                         }
                     }
 
-                    HorizontalDivider(Modifier.padding(vertical = 16.dp), thickness = 0.5.dp)
+                    Spacer(Modifier.height(24.dp))
 
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        VersionInfoBlock("Current", currentVersion)
-                        VersionInfoBlock("Latest", releaseInfo?.version ?: "Checking...")
+                    Text(
+                        text = when (state) {
+                            OTAState.Error -> "Update Failed"
+                            OTAState.Success -> "Successfully Updated"
+                            else -> if (isUpToDate) "System is Up to Date" else "Update Available"
+                        },
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Text(
+                        text = when (state) {
+                            OTAState.Error -> "Something went wrong. Please check your connection."
+                            OTAState.Success -> "Your device is now running the latest software."
+                            else -> if (isUpToDate) "You are running the latest firmware." else "Version ${releaseInfo?.version} is ready to be installed."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (state == OTAState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(Modifier.height(24.dp))
+
+                    // Version segmented pills
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface).padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text("Current: $currentVersion", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        }
+                        Icon(Icons.Outlined.ArrowRightAlt, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp))
+                        Box(
+                            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (!isUpToDate) statusColor else MaterialTheme.colorScheme.surface).padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text("Latest: ${releaseInfo?.version ?: currentVersion}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = if (!isUpToDate) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                        }
                     }
 
                     if (state == OTAState.Error && !errorMessage.isNullOrBlank()) {
-                        HorizontalDivider(Modifier.padding(vertical = 16.dp), thickness = 0.5.dp)
+                        Spacer(Modifier.height(16.dp))
                         Text(
                             text = errorMessage!!,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -236,120 +295,97 @@ fun OTAScreen(otaViewModel: OTAViewModel) {
 
             // ── Release Details ─────────────────────────────────────────────
             releaseInfo?.let { info ->
-                Text(
-                    text = info.title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 8.dp, start = 4.dp)
-                )
-
                 if (!info.fileName.isNullOrBlank() || info.size != null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = "Package Details",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            info.fileName?.takeIf { it.isNotBlank() }?.let { fileName ->
-                                Text(
-                                    text = "File: $fileName",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            info.size?.let { size ->
-                                Text(
-                                    text = "Size: ${formatFileSize(size)}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                        info.fileName?.takeIf { it.isNotBlank() }?.let { fileName ->
+                            DetailPill(Icons.Outlined.Description, fileName, Modifier.weight(1f))
+                        }
+                        info.size?.let { size ->
+                            DetailPill(Icons.Outlined.SdStorage, formatFileSize(size), Modifier.weight(1f))
                         }
                     }
                 }
 
                 if (info.new_features.isNotEmpty()) {
-                    UpdateSection("New Features", Icons.Outlined.Star, info.new_features)
+                    UpdateSection("New Features", Icons.Outlined.AutoAwesome, info.new_features)
                 }
 
                 if (info.improvements.isNotEmpty()) {
-                    UpdateSection("Improvements", Icons.Outlined.AutoGraph, info.improvements)
+                    UpdateSection("Improvements", Icons.Outlined.TrendingUp, info.improvements)
                 }
 
                 if (info.notes.isNotEmpty()) {
-                    UpdateSection("Notes", Icons.Outlined.Info, info.notes, isNotes = true)
-                }
-            }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-                )
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "Local Firmware",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "You can also import a .bin firmware file from your phone and upload it directly to the clock.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    UpdateSection("Important Notes", Icons.Outlined.WarningAmber, info.notes, isNotes = true)
                 }
             }
 
             if (state == OTAState.Checking) {
-                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(strokeWidth = 3.dp)
+                Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(strokeWidth = 4.dp, modifier = Modifier.size(48.dp), color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(16.dp))
+                        Text("Checking for updates...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(120.dp)) // Extra space for huge bottom bar
         }
     }
 }
 
 @Composable
-private fun VersionInfoBlock(label: String, version: String) {
-    Column {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(version, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+private fun DetailPill(icon: ImageVector, text: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(icon, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(8.dp))
+            Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
 @Composable
 private fun UpdateSection(title: String, icon: ImageVector, items: List<String>, isNotes: Boolean = false) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 12.dp, start = 8.dp)) {
+            Icon(icon, null, tint = if (isNotes) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
         
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = if (isNotes) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f) 
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            )
+                containerColor = if (isNotes) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f) 
+                                else MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = if (isNotes) 0.dp else 1.dp)
         ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 items.forEach { item ->
-                    Row {
-                        Text("•", Modifier.padding(end = 8.dp), color = MaterialTheme.colorScheme.primary)
-                        Text(item, style = MaterialTheme.typography.bodyMedium)
+                    Row(verticalAlignment = Alignment.Top) {
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (isNotes) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Text(item, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }

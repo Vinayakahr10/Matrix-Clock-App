@@ -14,6 +14,8 @@ import androidx.lifecycle.viewModelScope
 import com.dotmatrix.app.ble.BleError
 import com.dotmatrix.app.ble.BleManager
 import com.dotmatrix.app.ble.FirmwareAlarmState
+import com.dotmatrix.app.ble.FirmwareDextBotState
+import com.dotmatrix.app.ble.FirmwareWeatherState
 import com.dotmatrix.app.ble.ScannedDevice
 import com.dotmatrix.app.service.PhoneMicVisualizerRuntime
 import com.dotmatrix.app.service.PhoneMicVisualizerService
@@ -52,6 +54,7 @@ class SharedConnectionViewModel(application: Application) : AndroidViewModel(app
         private val KEY_VISUALIZER_SOURCE = stringPreferencesKey("visualizer_source")
         private val KEY_VISUALIZER_STYLE = stringPreferencesKey("visualizer_style")
         private val KEY_MESSAGE_ANIMATION_STYLE = stringPreferencesKey("message_animation_style")
+        private val KEY_CURRENT_FACE = stringPreferencesKey("current_face")
         private val KEY_VISUALIZER_SENSITIVITY = intPreferencesKey("visualizer_sensitivity")
         private const val TARGET_DEVICE_NAME = "DotMatrix Clock"
     }
@@ -71,6 +74,8 @@ class SharedConnectionViewModel(application: Application) : AndroidViewModel(app
     val humidity: StateFlow<Float?> = bleManager.humidity
     val currentMode: StateFlow<String> = bleManager.currentMode
     val currentClockTool: StateFlow<String> = bleManager.currentClockTool
+    val weatherState: StateFlow<FirmwareWeatherState> = bleManager.weatherState
+    val dextBotState: StateFlow<FirmwareDextBotState> = bleManager.dextBotState
     val deviceEvents: SharedFlow<String> = _deviceEvents.asSharedFlow()
     val timeFormatStatusMessage: StateFlow<String?> = bleManager.timeFormatStatusMessage
     private val connectionReadyEvents: SharedFlow<Unit> = bleManager.connectionReadyEvents
@@ -97,6 +102,9 @@ class SharedConnectionViewModel(application: Application) : AndroidViewModel(app
 
     private val _messageAnimationStyle = MutableStateFlow("NONE")
     val messageAnimationStyle: StateFlow<String> = _messageAnimationStyle.asStateFlow()
+
+    private val _currentFace = MutableStateFlow("CLASSIC")
+    val currentFace: StateFlow<String> = _currentFace.asStateFlow()
 
     private val _alarms = MutableStateFlow<List<Alarm>>(emptyList())
     val alarms: StateFlow<List<Alarm>> = _alarms.asStateFlow()
@@ -159,6 +167,7 @@ class SharedConnectionViewModel(application: Application) : AndroidViewModel(app
             _visualizerSource.value = prefs[KEY_VISUALIZER_SOURCE] ?: "DEVICE"
             _visualizerStyle.value = prefs[KEY_VISUALIZER_STYLE] ?: "BARS"
             _messageAnimationStyle.value = prefs[KEY_MESSAGE_ANIMATION_STYLE] ?: "NONE"
+            _currentFace.value = prefs[KEY_CURRENT_FACE] ?: "CLASSIC"
             _sensitivity.value = prefs[KEY_VISUALIZER_SENSITIVITY] ?: 50
             _visualizerMode.value = when (_visualizerStyle.value) {
                 "WAVE" -> "waveform"
@@ -200,6 +209,7 @@ class SharedConnectionViewModel(application: Application) : AndroidViewModel(app
         val visualizerSource = _visualizerSource.value
         val visualizerStyle = _visualizerStyle.value
         val messageAnimationStyle = _messageAnimationStyle.value
+        val currentFace = _currentFace.value
         val sensitivity = _sensitivity.value
         viewModelScope.launch {
             dataStore.edit { prefs ->
@@ -209,6 +219,7 @@ class SharedConnectionViewModel(application: Application) : AndroidViewModel(app
                 prefs[KEY_VISUALIZER_SOURCE] = visualizerSource
                 prefs[KEY_VISUALIZER_STYLE] = visualizerStyle
                 prefs[KEY_MESSAGE_ANIMATION_STYLE] = messageAnimationStyle
+                prefs[KEY_CURRENT_FACE] = currentFace
                 prefs[KEY_VISUALIZER_SENSITIVITY] = sensitivity
             }
         }
@@ -280,6 +291,7 @@ class SharedConnectionViewModel(application: Application) : AndroidViewModel(app
                 bleManager.writeData("VIZSRC:${_visualizerSource.value}")
                 bleManager.writeData("VIZSTYLE:${_visualizerStyle.value}")
                 bleManager.writeData("MSGANIM:${_messageAnimationStyle.value}")
+                bleManager.writeData("FACE:${_currentFace.value}")
                 bleManager.writeData("VIS_SENSE:${_sensitivity.value.coerceIn(0, 100)}")
             }
         }
@@ -328,6 +340,13 @@ class SharedConnectionViewModel(application: Application) : AndroidViewModel(app
         viewModelScope.launch {
             bleManager.messageAnimationStyle.collectLatest { style ->
                 _messageAnimationStyle.value = style
+                persistUiPreferences()
+            }
+        }
+
+        viewModelScope.launch {
+            bleManager.currentFace.collectLatest { face ->
+                _currentFace.value = face
                 persistUiPreferences()
             }
         }
@@ -448,6 +467,21 @@ class SharedConnectionViewModel(application: Application) : AndroidViewModel(app
         if (trimmed.isNotEmpty()) {
             bleManager.writeData("MSG:$trimmed")
         }
+    }
+
+    fun setDisplayMode(mode: String) {
+        bleManager.writeData("MODE:${mode.uppercase()}")
+    }
+
+    fun setClockTool(tool: String) {
+        bleManager.writeData("CTOOL:${tool.uppercase()}")
+    }
+
+    fun setClockFace(faceId: String) {
+        val uppercaseFace = faceId.uppercase()
+        _currentFace.value = uppercaseFace
+        persistUiPreferences()
+        bleManager.writeData("FACE:$uppercaseFace")
     }
 
     fun sendMessageAnimationNone() {
@@ -823,5 +857,25 @@ class SharedConnectionViewModel(application: Application) : AndroidViewModel(app
     
     fun sendBatteryLevel(level: Int) {
         bleManager.writeData("BAT:$level")
+    }
+
+    fun sendWeather(temp: Float, feelsLike: Float, condition: String, humidity: Int, city: String) {
+        // WEATHER:T:22.5,F:20.1,C:Rain,H:65,CITY:London
+        val payload = "WEATHER:T:%.1f,F:%.1f,C:%s,H:%d,CITY:%s".format(
+            Locale.US, temp, feelsLike, condition, humidity, city
+        )
+        bleManager.writeData(payload)
+    }
+
+    fun requestWeather() {
+        bleManager.writeData("WEATHER?")
+    }
+
+    fun clearWeather() {
+        bleManager.writeData("WEATHER_CLEAR")
+    }
+
+    fun requestDextBotState() {
+        bleManager.writeData("DEXTBOT?")
     }
 }

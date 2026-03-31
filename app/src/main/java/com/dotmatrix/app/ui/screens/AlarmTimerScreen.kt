@@ -1,12 +1,12 @@
 package com.dotmatrix.app.ui.screens
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -24,32 +24,31 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SyncAlt
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.NumberPicker
-import com.dotmatrix.app.ui.theme.Typography
 import com.dotmatrix.app.viewmodel.Alarm
 import com.dotmatrix.app.viewmodel.SharedConnectionViewModel
 import java.time.LocalTime
@@ -79,6 +78,8 @@ fun AlarmTimerScreen(
     var pendingMinute by remember { mutableIntStateOf(0) }
     val haptic = LocalHapticFeedback.current
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     LaunchedEffect(currentClockTool) {
         activeTab = when (currentClockTool) {
             "CLOCK" -> ActiveTab.Settings
@@ -105,45 +106,114 @@ fun AlarmTimerScreen(
     val isTimerRunning by sharedViewModel.isTimerRunning.collectAsState()
     val stopwatchMillis by sharedViewModel.stopwatchMillis.collectAsState()
     val isSwRunning by sharedViewModel.isStopwatchRunning.collectAsState()
-
     val is24H by sharedViewModel.is24HourFormat.collectAsState()
 
+    val headerAlpha by animateFloatAsState(
+        targetValue = if (scrollBehavior.state.collapsedFraction > 0.05f) 0.85f else 0f,
+        animationSpec = tween(150, easing = LinearEasing),
+        label = "headerAlpha"
+    )
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
-                TopAppBar(
-                    title = { Text("Clock", style = MaterialTheme.typography.titleLarge) },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-                )
-                TabRow(
-                    selectedTabIndex = activeTab.ordinal,
-                    containerColor = MaterialTheme.colorScheme.background,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab.ordinal]),
-                            color = MaterialTheme.colorScheme.primary
-                        )
+            Column(
+                modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = headerAlpha))
+            ) {
+                LargeTopAppBar(
+                    title = { 
+                        Text(
+                            "Clock", 
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.displaySmall
+                        ) 
                     },
-                    divider = {}
+                    scrollBehavior = scrollBehavior,
+                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = Color.Transparent
+                    )
+                )
+                // ── Segmented Pill Navigation ────────────────────────────────
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    shadowElevation = 2.dp
                 ) {
-                    ActiveTab.values().forEach { tab ->
-                        Tab(
-                            selected = activeTab == tab,
-                            onClick = { 
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                activeTab = tab 
-                            },
-                            text = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
-                            icon = { Icon(tab.icon, null) }
-                        )
+                    Box(modifier = Modifier.padding(4.dp)) {
+                        val tabs = ActiveTab.values()
+                        val selectedIndex = tabs.indexOf(activeTab)
+                        
+                        BoxWithConstraints(modifier = Modifier.matchParentSize()) {
+                            val tabWidth = maxWidth / tabs.size
+                            val indicatorOffset by animateDpAsState(
+                                targetValue = tabWidth * selectedIndex,
+                                animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+                                label = "indicatorOffset"
+                            )
+                            
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = indicatorOffset)
+                                    .width(tabWidth)
+                                    .fillMaxHeight()
+                                    .background(MaterialTheme.colorScheme.surface, CircleShape)
+                            )
+                        }
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            tabs.forEach { tab ->
+                                val isSelected = activeTab == tab
+                                val textColor by animateColorAsState(
+                                    targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, 
+                                    animationSpec = tween(durationMillis = 250),
+                                    label = "textColor"
+                                )
+                                
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(CircleShape)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) { 
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            activeTab = tab 
+                                        }
+                                        .padding(vertical = 12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = tab.icon,
+                                        contentDescription = tab.label,
+                                        tint = textColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = tab.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = textColor,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
         },
         floatingActionButton = {
             if (activeTab == ActiveTab.Alarms) {
-                FloatingActionButton(
+                ExtendedFloatingActionButton(
                     onClick = { 
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         val now = LocalTime.now().plusMinutes(1)
@@ -152,13 +222,13 @@ fun AlarmTimerScreen(
                         pendingAlarmLabel = "Alarm"
                         showTimePicker = true 
                     },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.padding(bottom = 16.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(24.dp))
-                }
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    icon = { Icon(Icons.Default.Add, contentDescription = "Add") },
+                    text = { Text("New Alarm", fontWeight = FontWeight.Bold) }
+                )
             }
         }
     ) { innerPadding ->
@@ -172,60 +242,58 @@ fun AlarmTimerScreen(
                     when (activeTab) {
                         ActiveTab.Settings -> ClockSettingsContent(sharedViewModel, haptic)
                         ActiveTab.Alarms -> AlarmsContent(
-                    alarms = alarms,
-                    onToggle = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        sharedViewModel.toggleAlarm(it) 
-                    },
-                    onDelete = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        sharedViewModel.deleteAlarm(it) 
-                    }
+                            alarms = alarms,
+                            onToggle = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                sharedViewModel.toggleAlarm(it) 
+                            },
+                            onDelete = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                sharedViewModel.deleteAlarm(it.id) 
+                            }
                         )
-                ActiveTab.Timers -> TimerContent(
-                    secondsLeft = timerSeconds,
-                    initialSeconds = initialTimerSeconds,
-                    isRunning = isTimerRunning,
-                    onSetDuration = {
-                        sharedViewModel.setTimerDuration(it)
-                    },
-                    onStart = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        sharedViewModel.startTimer(it) 
-                    },
-                    onStop = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        sharedViewModel.stopTimer() 
-                    },
-                    onReset = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        sharedViewModel.resetTimer() 
-                    },
-                    onAddSeconds = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        sharedViewModel.addTimerSeconds(it) 
-                    },
-                    haptic = haptic
+                        ActiveTab.Timers -> TimerContent(
+                            secondsLeft = timerSeconds,
+                            initialSeconds = initialTimerSeconds,
+                            isRunning = isTimerRunning,
+                            onSetDuration = { sharedViewModel.setTimerDuration(it) },
+                            onStart = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                sharedViewModel.startTimer(it) 
+                            },
+                            onStop = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                sharedViewModel.stopTimer() 
+                            },
+                            onReset = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                sharedViewModel.resetTimer() 
+                            },
+                            onAddSeconds = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                sharedViewModel.addTimerSeconds(it) 
+                            },
+                            haptic = haptic
                         )
                         ActiveTab.Stopwatch -> StopwatchContent(
-                    millis = stopwatchMillis,
-                    isRunning = isSwRunning,
-                    onStart = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        sharedViewModel.startStopwatch() 
-                    },
-                    onPause = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        sharedViewModel.pauseStopwatch() 
-                    },
-                    onReset = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        sharedViewModel.resetStopwatch() 
-                    },
-                    onLap = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        sharedViewModel.lapStopwatch()
-                    }
+                            millis = stopwatchMillis,
+                            isRunning = isSwRunning,
+                            onStart = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                sharedViewModel.startStopwatch() 
+                            },
+                            onPause = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                sharedViewModel.pauseStopwatch() 
+                            },
+                            onReset = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                sharedViewModel.resetStopwatch() 
+                            },
+                            onLap = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                sharedViewModel.lapStopwatch()
+                            }
                         )
                     }
                 }
@@ -273,645 +341,563 @@ private fun ClockToolStatusCard(
     isConnected: Boolean,
     currentClockTool: String
 ) {
-    Card(
+    val statusColor = if (isConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.error
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = "Clock Tool",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = if (isConnected) {
-                    currentClockTool.lowercase().replaceFirstChar { it.uppercase() }
-                } else {
-                    "Connect to sync the active tool"
-                },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = if (isConnected) {
-                    "This follows the firmware clock submenu state reported in INFO."
-                } else {
-                    "The app will update this after reconnecting and requesting device info."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ClockSettingsContent(sharedViewModel: SharedConnectionViewModel, haptic: HapticFeedback) {
-    val isConnected by sharedViewModel.isConnected.collectAsState()
-    val is24H by sharedViewModel.is24HourFormat.collectAsState()
-    val timeFormatStatusMessage by sharedViewModel.timeFormatStatusMessage.collectAsState()
-    val brightness by sharedViewModel.brightness.collectAsState()
-    val animation by sharedViewModel.animationStyle.collectAsState()
-    val scrollText by sharedViewModel.scrollText.collectAsState()
-    var localBrightness by remember(brightness) { mutableFloatStateOf(brightness.toFloat()) }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Schedule, null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Time Format", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "Choose how the clock time is displayed on the matrix",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SegmentedButton(
-                        selected = is24H,
-                        onClick = {
-                            if (!isConnected || is24H) return@SegmentedButton
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            sharedViewModel.setTimeFormat(true)
-                        },
-                        enabled = isConnected,
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                        label = { Text("24 Hour") }
-                    )
-                    SegmentedButton(
-                        selected = !is24H,
-                        onClick = {
-                            if (!isConnected || !is24H) return@SegmentedButton
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            sharedViewModel.setTimeFormat(false)
-                        },
-                        enabled = isConnected,
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                        label = { Text("12 Hour") }
-                    )
-                }
-
-                Text(
-                    text = if (is24H) "Example: 18:45" else "Example: 06:45",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            .padding(16.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        statusColor.copy(alpha = 0.2f),
+                        statusColor.copy(alpha = 0.05f)
+                    ),
+                    radius = 400f
                 )
-
-                if (!timeFormatStatusMessage.isNullOrBlank()) {
+            )
+            .padding(20.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (isConnected) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff,
+                    contentDescription = null,
+                    tint = statusColor,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
                     Text(
-                        text = timeFormatStatusMessage!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (timeFormatStatusMessage == "Invalid time format selected") {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        }
+                        text = if (isConnected) "Clock Connected" else "Disconnected",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                }
-
-                if (!isConnected) {
                     Text(
-                        text = "Connect to the clock to change the display format.",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "Active Mode: $currentClockTool",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
+            if (isConnected) {
+                Box(contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(statusColor.copy(alpha = 0.3f))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(statusColor)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClockSettingsContent(
+    sharedViewModel: SharedConnectionViewModel,
+    haptic: HapticFeedback
+) {
+    val is24H by sharedViewModel.is24HourFormat.collectAsState()
+    val scrollText by sharedViewModel.scrollText.collectAsState()
+    val brightness by sharedViewModel.brightness.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        SettingsSection(title = "Display Options") {
+            SettingsToggleRow(
+                title = "24-Hour Format",
+                subtitle = "Toggle between 12h and 24h",
+                icon = Icons.Outlined.Schedule,
+                checked = is24H,
+                onCheckedChange = { 
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    sharedViewModel.setTimeFormat(it) 
+                }
+            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+            SettingsToggleRow(
+                title = "Scroll Text",
+                subtitle = "Enable scrolling for long text",
+                icon = Icons.Outlined.Timelapse,
+                checked = scrollText,
+                onCheckedChange = { 
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    sharedViewModel.setScrollText(it) 
+                }
+            )
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.WbSunny, null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(12.dp))
-                    Text("Brightness", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    Text("${localBrightness.toInt()}", color = MaterialTheme.colorScheme.primary)
+        SettingsSection(title = "Brightness") {
+            Spacer(modifier = Modifier.height(16.dp))
+            Column(modifier = Modifier.padding(horizontal = 8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("${(brightness.toFloat() / 15f * 100).roundToInt()}%", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
                 Slider(
-                    value = localBrightness,
-                    onValueChange = { 
-                        val snapped = it.roundToInt().toFloat()
-                        if (snapped.toInt() != localBrightness.toInt()) {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        }
-                        localBrightness = snapped
-                    },
-                    onValueChangeFinished = {
-                        sharedViewModel.setBrightness(localBrightness.toInt())
-                    },
+                    value = brightness.toFloat(),
                     valueRange = 0f..15f,
-                    steps = 14,
-                    enabled = isConnected
-                )
-                Text(
-                    text = "Brightness: ${localBrightness.toInt()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    onValueChange = { sharedViewModel.setBrightness(it.roundToInt()) },
+                    onValueChangeFinished = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                 )
             }
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Settings, null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(12.dp))
-                    Text("Animation Style", style = MaterialTheme.typography.titleMedium)
-                }
-                Spacer(Modifier.height(8.dp))
-
-                val animationOptions = listOf("None", "Wave", "Fade", "Scroll", "Rain")
-                var expanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it }
-                ) {
-                    OutlinedTextField(
-                        value = animation,
-                        onValueChange = {},
-                        readOnly = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        animationOptions.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option) },
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    sharedViewModel.setAnimationStyle(option)
-                                    expanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.SyncAlt, null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Scroll Text", style = MaterialTheme.typography.titleMedium)
-                        Text("Enable for long messages", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(checked = scrollText, onCheckedChange = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        sharedViewModel.setScrollText(it) 
-                    })
-                }
-            }
-        }
-        
-        Button(
-            onClick = { 
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                sharedViewModel.sendCurrentTimeSync()
-            },
-            enabled = isConnected,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Icon(Icons.Outlined.Sync, null)
-            Spacer(Modifier.width(8.dp))
-            Text("Sync Time with Phone")
         }
     }
 }
 
 @Composable
-fun SettingsItemCard(icon: ImageVector, title: String, subtitle: String, action: @Composable () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+private fun SettingsSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column {
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+        )
+        Card(
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsToggleRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "settingsScale"
+    )
+    
+    LaunchedEffect(isPressed) {
+        if (isPressed) {
+            kotlinx.coroutines.delay(100)
+            isPressed = false
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable { 
+                isPressed = true
+                onCheckedChange(!checked) 
+            }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(8.dp))
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            action()
         }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
 @Composable
-fun AlarmsContent(alarms: List<Alarm>, onToggle: (Alarm) -> Unit, onDelete: (String) -> Unit) {
+private fun AlarmsContent(
+    alarms: List<Alarm>,
+    onToggle: (Alarm) -> Unit,
+    onDelete: (Alarm) -> Unit
+) {
     if (alarms.isEmpty()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Card(
-                shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.05f),
+                    modifier = Modifier.size(100.dp)
                 ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = CircleShape,
-                        modifier = Modifier.size(68.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Outlined.Alarm,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                    }
-                    Text(
-                        text = "No alarms yet",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Tap the + button to add your first alarm.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
+                    Icon(
+                        Icons.Outlined.AlarmOff, 
+                        null, 
+                        modifier = Modifier.padding(24.dp), 
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
                 }
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    "No alarms set", 
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "Tap + to create a new alarm", 
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
             }
         }
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(alarms) { alarm ->
-                AlarmItem(alarm, onToggle, onDelete)
+                AlarmItem(alarm = alarm, onToggle = { onToggle(alarm) }, onDelete = { onDelete(alarm) })
             }
-            item { Spacer(Modifier.height(80.dp)) }
         }
     }
 }
 
 @Composable
-fun AlarmItem(alarm: Alarm, onToggle: (Alarm) -> Unit, onDelete: (String) -> Unit) {
+private fun AlarmItem(
+    alarm: Alarm,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "alarmScale"
+    )
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (alarm.active) {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            } else {
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+            containerColor = if (alarm.active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) 
+                             else MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (alarm.active) 0.dp else 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
             }
-        )
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onToggle()
+                // A quick flash of the press state purely for visual feedback since clickable consumes pointer
+                isPressed = true
+            }
     ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(
-                color = if (alarm.active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                shape = CircleShape,
-                modifier = Modifier.size(48.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (alarm.active) Icons.Outlined.AlarmOn else Icons.Outlined.AlarmOff,
-                        contentDescription = null,
-                        tint = if (alarm.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        // Quick coroutine to reset the 'isPressed' state since standard clickable doesn't expose press state easily
+        LaunchedEffect(isPressed) {
+            if (isPressed) {
+                kotlinx.coroutines.delay(100)
+                isPressed = false
+            }
+        }
+        Row(
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(
+                    text = alarm.time,
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (alarm.active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (alarm.label.isNotEmpty()) {
+                    Text(
+                        text = alarm.label,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = if (alarm.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }
             }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    alarm.label.ifBlank { "Alarm" },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (alarm.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onDelete()
+                    },
+                    modifier = Modifier.background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Switch(
+                    checked = alarm.active, 
+                    onCheckedChange = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onToggle()
+                    }
                 )
-                Text(
-                    alarm.time,
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (alarm.active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = if (alarm.active) "Enabled" else "Disabled",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = alarm.active, onCheckedChange = { onToggle(alarm) })
-            IconButton(onClick = { onDelete(alarm.id) }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
             }
         }
     }
 }
 
 @Composable
-fun TimerContent(
-    secondsLeft: Int, 
+private fun TimerContent(
+    secondsLeft: Int,
     initialSeconds: Int,
-    isRunning: Boolean, 
+    isRunning: Boolean,
     onSetDuration: (Int) -> Unit,
-    onStart: (Int) -> Unit, 
+    onStart: (Int) -> Unit,
     onStop: () -> Unit,
     onReset: () -> Unit,
     onAddSeconds: (Int) -> Unit,
     haptic: HapticFeedback
 ) {
-    val h = secondsLeft / 3600
-    val m = (secondsLeft % 3600) / 60
-    val s = secondsLeft % 60
-
-    var configuredHours by remember { mutableIntStateOf(0) }
-    var configuredMinutes by remember { mutableIntStateOf(5) }
-    var configuredSeconds by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(isRunning, secondsLeft) {
-        if (!isRunning) {
-            val source = if (secondsLeft > 0) secondsLeft else configuredHours * 3600 + configuredMinutes * 60 + configuredSeconds
-            configuredHours = source / 3600
-            configuredMinutes = (source % 3600) / 60
-            configuredSeconds = source % 60
-        }
-    }
-
-    val configuredTotalSeconds = configuredHours * 3600 + configuredMinutes * 60 + configuredSeconds
-    val presets = listOf(60, 300, 600, 900, 1800, 3600)
-    val quickAdds = listOf(30, 60, 300)
-    val timerTrackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-    val timerProgressColor = MaterialTheme.colorScheme.primary
+    var showPresetPicker by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(20.dp)
-            .verticalScroll(rememberScrollState()),
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        verticalArrangement = Arrangement.Center
     ) {
-        Spacer(Modifier.height(4.dp))
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
+            val progress = if (initialSeconds > 0) secondsLeft.toFloat() / initialSeconds else 0f
+            val animatedProgress by animateFloatAsState(
+                targetValue = progress,
+                animationSpec = tween(durationMillis = 1000, easing = LinearEasing),
+                label = "TimerProgress"
+            )
 
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(260.dp)) {
-            val sweepAngle = if (initialSeconds > 0) (secondsLeft.toFloat() / initialSeconds) * 360f else 0f
+            val primaryColor = MaterialTheme.colorScheme.primary
+            val tertiaryColor = MaterialTheme.colorScheme.tertiary
+            
             Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = 24.dp.toPx()
                 drawArc(
-                    color = timerTrackColor,
-                    startAngle = -90f, sweepAngle = 360f, useCenter = false, 
-                    style = Stroke(12.dp.toPx(), cap = StrokeCap.Round)
+                    color = primaryColor.copy(alpha = 0.1f),
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
-                if (sweepAngle > 0) {
-                    drawArc(
-                        color = timerProgressColor,
-                        startAngle = -90f, sweepAngle = sweepAngle, useCenter = false, 
-                        style = Stroke(12.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                }
+                
+                val sweepGradient = Brush.sweepGradient(
+                    0.0f to tertiaryColor,
+                    0.5f to primaryColor,
+                    1.0f to tertiaryColor
+                )
+                
+                drawArc(
+                    brush = sweepGradient,
+                    startAngle = -90f,
+                    sweepAngle = 360f * animatedProgress,
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
             }
+
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s),
-                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 64.sp)
+                    text = formatTime(secondsLeft),
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-2).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = if (isRunning) "Timer running" else if (secondsLeft > 0) "Paused" else "Ready to start",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        if (!isRunning) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
+                if (initialSeconds > 0) {
                     Text(
-                        text = "Set Timer",
+                        text = "Total: ${formatTime(initialSeconds)}",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TimeWheel(
-                            label = "Hours",
-                            values = (0..23).toList(),
-                            selectedValue = configuredHours,
-                            formatter = { "%02d".format(it) },
-                            onValueChange = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                configuredHours = it
-                                onSetDuration(configuredHours * 3600 + configuredMinutes * 60 + configuredSeconds)
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        TimeWheel(
-                            label = "Minutes",
-                            values = (0..59).toList(),
-                            selectedValue = configuredMinutes,
-                            formatter = { "%02d".format(it) },
-                            onValueChange = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                configuredMinutes = it
-                                onSetDuration(configuredHours * 3600 + configuredMinutes * 60 + configuredSeconds)
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        TimeWheel(
-                            label = "Seconds",
-                            values = (0..59).toList(),
-                            selectedValue = configuredSeconds,
-                            formatter = { "%02d".format(it) },
-                            onValueChange = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                configuredSeconds = it
-                                onSetDuration(configuredHours * 3600 + configuredMinutes * 60 + configuredSeconds)
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Text(
-                        text = "Quick presets",
-                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(104.dp)
-                    ) {
-                        items(presets) { presetSeconds ->
-                            FilterChip(
-                                selected = configuredTotalSeconds == presetSeconds,
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    configuredHours = presetSeconds / 3600
-                                    configuredMinutes = (presetSeconds % 3600) / 60
-                                    configuredSeconds = presetSeconds % 60
-                                    onSetDuration(presetSeconds)
-                                },
-                                label = { Text(formatTimerPreset(presetSeconds)) },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    Button(
-                        onClick = { onStart(configuredTotalSeconds) },
-                        enabled = configuredTotalSeconds > 0,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(18.dp)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (secondsLeft > 0) "Start Selected Timer" else "Start Timer")
-                    }
-                }
-            }
-        } else {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "Quick Add",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        quickAdds.forEach { extra ->
-                            AssistChip(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onAddSeconds(extra)
-                                },
-                                label = { Text("+${formatQuickAdd(extra)}") },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(
-                            onClick = onReset,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp),
-                            shape = RoundedCornerShape(18.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Reset")
-                        }
-
-                        Button(
-                            onClick = { if (isRunning) onStop() else onStart(secondsLeft) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isRunning) {
-                                    MaterialTheme.colorScheme.errorContainer
-                                } else {
-                                    MaterialTheme.colorScheme.primary
-                                },
-                                contentColor = if (isRunning) {
-                                    MaterialTheme.colorScheme.onErrorContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onPrimary
-                                }
-                            )
-                        ) {
-                            Icon(
-                                imageVector = if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = null
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (isRunning) "Pause" else "Resume")
-                        }
-                    }
                 }
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(48.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                onClick = onReset,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.size(64.dp)
+            ) {
+                Icon(Icons.Default.Refresh, "Reset", modifier = Modifier.padding(16.dp))
+            }
+
+            Button(
+                onClick = { 
+                    if (isRunning) onStop() 
+                    else if (secondsLeft > 0) onStart(secondsLeft)
+                    else showPresetPicker = true
+                },
+                modifier = Modifier
+                    .height(64.dp)
+                    .width(160.dp),
+                shape = RoundedCornerShape(32.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = if (isRunning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                ),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+            ) {
+                Icon(if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow, null, modifier = Modifier.size(28.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(if (isRunning) "PAUSE" else "START", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+            }
+
+            Surface(
+                onClick = { showPresetPicker = true },
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.size(64.dp)
+            ) {
+                Icon(Icons.Outlined.Timer, "Set", modifier = Modifier.padding(16.dp))
+            }
+        }
+
+        if (isRunning) {
+            Spacer(modifier = Modifier.height(32.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                listOf(30, 60, 300).forEach { secs ->
+                    Surface(
+                        onClick = { onAddSeconds(secs) },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shadowElevation = 2.dp
+                    ) {
+                        Text(
+                            "+${formatQuickAdd(secs)}",
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showPresetPicker) {
+        TimerPresetDialog(
+            onDismiss = { showPresetPicker = false },
+            onSelected = { 
+                onSetDuration(it)
+                showPresetPicker = false 
+            }
+        )
     }
 }
 
 @Composable
-fun StopwatchContent(
+private fun TimerPresetDialog(
+    onDismiss: () -> Unit,
+    onSelected: (Int) -> Unit
+) {
+    val presets = listOf(
+        60, 120, 300, 600, 900, 1800, 3600, 7200
+    )
+    
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Set Timer", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.height(300.dp)
+                ) {
+                    items(presets) { seconds ->
+                        Button(
+                            onClick = { onSelected(seconds) },
+                            modifier = Modifier.height(60.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        ) {
+                            Text(formatTimerPreset(seconds))
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StopwatchContent(
     millis: Long,
     isRunning: Boolean,
     onStart: () -> Unit,
@@ -919,147 +905,93 @@ fun StopwatchContent(
     onReset: () -> Unit,
     onLap: () -> Unit
 ) {
-    val h = (millis / 3600000) % 24
-    val m = (millis / 60000) % 60
-    val s = (millis / 1000) % 60
-    val ms = (millis % 1000) / 10
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, 
-        verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically)
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(32.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
-                    shape = CircleShape,
-                    modifier = Modifier.size(80.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Outlined.Timer,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-                }
-
-                Text(
-                    text = if (isRunning) "Stopwatch running" else if (millis > 0L) "Paused" else "Ready",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = if (h > 0) "%02d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s),
-                        style = MaterialTheme.typography.displayLarge.copy(fontSize = 72.sp),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = ".%02d".format(ms),
-                        style = MaterialTheme.typography.displaySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-                }
-
-                Text(
-                    text = "Hours  Minutes  Seconds",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Text(
-                    text = when {
-                        isRunning -> "Running"
-                        millis > 0L -> "Paused at ${if (h > 0) "%02d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)}.%02d".format(ms)
-                        else -> "Ready when you are"
-                    },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
+        Spacer(modifier = Modifier.weight(0.5f))
+        
+        Text(
+            text = formatMillis(millis),
+            style = MaterialTheme.typography.displayLarge.copy(
+                fontSize = 72.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = (-4).sp
+            ),
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center
+        )
+        
+        Spacer(modifier = Modifier.weight(1f))
+        
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedButton(
+            Surface(
                 onClick = onReset,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(58.dp),
-                shape = RoundedCornerShape(20.dp),
-                enabled = millis > 0L
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.size(72.dp)
             ) {
-                Icon(Icons.Default.Refresh, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Reset")
+                Icon(Icons.Default.Refresh, "Reset", modifier = Modifier.padding(20.dp))
             }
 
-            Button(
-                onClick = { if (isRunning) onPause() else onStart() },
-                modifier = Modifier
-                    .weight(1f)
-                    .height(58.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRunning) {
-                        MaterialTheme.colorScheme.errorContainer
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                    contentColor = if (isRunning) {
-                        MaterialTheme.colorScheme.onErrorContainer
-                    } else {
-                        MaterialTheme.colorScheme.onPrimary
-                    }
-                )
+            Surface(
+                onClick = if (isRunning) onPause else onStart,
+                shape = CircleShape,
+                color = if (isRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                shadowElevation = 4.dp,
+                modifier = Modifier.size(96.dp)
             ) {
                 Icon(
-                    imageVector = if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = null
+                    if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow, 
+                    null,
+                    modifier = Modifier.padding(24.dp),
+                    tint = if (isRunning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
                 )
-                Spacer(Modifier.width(8.dp))
-                Text(if (isRunning) "Pause" else if (millis > 0L) "Resume" else "Start")
             }
-        }
 
-        FilledTonalButton(
-            onClick = onLap,
-            enabled = millis > 0L,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(54.dp),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.Flag, null)
-            Spacer(Modifier.width(8.dp))
-            Text("Lap")
+            Surface(
+                onClick = onLap,
+                enabled = isRunning,
+                shape = CircleShape,
+                color = if (isRunning) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                modifier = Modifier.size(72.dp)
+            ) {
+                Icon(
+                    Icons.Default.SyncAlt, 
+                    "Lap", 
+                    modifier = Modifier.padding(20.dp),
+                    tint = if (isRunning) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+private fun formatTime(seconds: Int): String {
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    val s = seconds % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
+}
+
+private fun formatMillis(millis: Long): String {
+    val totalSeconds = millis / 1000
+    val m = totalSeconds / 60
+    val s = totalSeconds % 60
+    val ms = (millis % 1000) / 10
+    return "%02d:%02d.%02d".format(m, s, ms)
+}
+
 @Composable
-fun AlarmDialog(
+private fun AlarmDialog(
     label: String,
     onLabelChange: (String) -> Unit,
     is24Hour: Boolean,
@@ -1071,57 +1003,91 @@ fun AlarmDialog(
     onConfirm: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+        Card(
             shape = RoundedCornerShape(28.dp),
-            tonalElevation = 8.dp,
-            color = MaterialTheme.colorScheme.surface
+            modifier = Modifier.fillMaxWidth()
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.AlarmAdd,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "New Alarm",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Text(
+                    text = "New Alarm",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
 
                 OutlinedTextField(
                     value = label,
                     onValueChange = onLabelChange,
+                    label = { Text("Label") },
                     singleLine = true,
-                    leadingIcon = {
-                        Icon(Icons.Outlined.Edit, contentDescription = null)
-                    },
-                    label = { Text("Alarm label") },
-                    placeholder = { Text("Alarm") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(12.dp)
                 )
 
-                AlarmTimeEditor(
-                    is24Hour = is24Hour,
-                    hour = hour,
-                    minute = minute,
-                    onHourChange = onHourChange,
-                    onMinuteChange = onMinuteChange
-                )
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val hours = if (is24Hour) (0..23).toList() else (1..12).toList()
+                    val minutes = (0..59).toList()
+
+                    NumberPickerView(
+                        label = "Hour",
+                        selectedValue = if (is24Hour) hour else (if (hour % 12 == 0) 12 else hour % 12),
+                        values = hours,
+                        onValueChange = { newVal ->
+                            if (is24Hour) {
+                                onHourChange(newVal)
+                            } else {
+                                val isPm = hour >= 12
+                                val actualHour = if (isPm) {
+                                    if (newVal == 12) 12 else newVal + 12
+                                } else {
+                                    if (newVal == 12) 0 else newVal
+                                }
+                                onHourChange(actualHour)
+                            }
+                        },
+                        formatter = { "%02d".format(it) },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Text(
+                        ":",
+                        style = MaterialTheme.typography.displayMedium,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+
+                    NumberPickerView(
+                        label = "Minute",
+                        selectedValue = minute,
+                        values = minutes,
+                        onValueChange = onMinuteChange,
+                        formatter = { "%02d".format(it) },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    if (!is24Hour) {
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 24.dp)
+                        ) {
+                            val isPm = hour >= 12
+                            AmPmButton(selected = !isPm, label = "AM") { onHourChange(hour % 12) }
+                            AmPmButton(selected = isPm, label = "PM") { onHourChange((hour % 12) + 12) }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1130,8 +1096,12 @@ fun AlarmDialog(
                     TextButton(onClick = onDismiss) {
                         Text("Cancel")
                     }
-                    TextButton(onClick = onConfirm) {
-                        Text("OK", fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = onConfirm,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Save Alarm")
                     }
                 }
             }
@@ -1140,163 +1110,31 @@ fun AlarmDialog(
 }
 
 @Composable
-private fun AlarmTimeEditor(
-    is24Hour: Boolean,
-    hour: Int,
-    minute: Int,
-    onHourChange: (Int) -> Unit,
-    onMinuteChange: (Int) -> Unit
+private fun AmPmButton(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit
 ) {
-    val haptic = LocalHapticFeedback.current
-    var hourInput by remember(hour, is24Hour) {
-        mutableStateOf("%02d".format(if (is24Hour) hour else hour.to12Hour()))
-    }
-    var minuteInput by remember(minute) {
-        mutableStateOf("%02d".format(minute))
-    }
-    val displayHour = if (is24Hour) hour else hour.to12Hour()
-    val isAm = hour < 12
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
-        )
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(width = 48.dp, height = 36.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TimeWheel(
-                    label = "Hour",
-                    values = if (is24Hour) (0..23).toList() else (1..12).toList(),
-                    selectedValue = displayHour,
-                    formatter = { "%02d".format(it) },
-                    onValueChange = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        if (is24Hour) onHourChange(it) else onHourChange(hour.with12Hour(it))
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = ":",
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                TimeWheel(
-                    label = "Minute",
-                    values = (0..59).toList(),
-                    selectedValue = minute,
-                    formatter = { "%02d".format(it) },
-                    onValueChange = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onMinuteChange(it)
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            if (!is24Hour) {
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SegmentedButton(
-                        selected = isAm,
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onHourChange(hour.withMeridiem(isAm = true))
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                        label = { Text("AM") }
-                    )
-                    SegmentedButton(
-                        selected = !isAm,
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onHourChange(hour.withMeridiem(isAm = false))
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                        label = { Text("PM") }
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedTextField(
-                    value = hourInput,
-                    onValueChange = { newValue ->
-                        val filtered = newValue.filter(Char::isDigit).take(2)
-                        hourInput = filtered
-                        filtered.toIntOrNull()?.let { typedHour ->
-                            val validHour = if (is24Hour) {
-                                typedHour in 0..23
-                            } else {
-                                typedHour in 1..12
-                            }
-                            if (validHour) {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                if (is24Hour) onHourChange(typedHour) else onHourChange(hour.with12Hour(typedHour))
-                            }
-                        }
-                    },
-                    label = { Text("Type hour") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp)
-                )
-                OutlinedTextField(
-                    value = minuteInput,
-                    onValueChange = { newValue ->
-                        val filtered = newValue.filter(Char::isDigit).take(2)
-                        minuteInput = filtered
-                        filtered.toIntOrNull()?.let { typedMinute ->
-                            if (typedMinute in 0..59) {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onMinuteChange(typedMinute)
-                            }
-                        }
-                    },
-                    label = { Text("Type minute") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp)
-                )
-            }
-
-            Text(
-                text = if (is24Hour) {
-                    "Selected time: %02d:%02d".format(hour, minute)
-                } else {
-                    "Selected time: %d:%02d %s".format(displayHour, minute, if (isAm) "AM" else "PM")
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Box(contentAlignment = Alignment.Center) {
+            Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
-private fun TimeWheel(
+private fun NumberPickerView(
     label: String,
-    values: List<Int>,
     selectedValue: Int,
-    formatter: (Int) -> String,
+    values: List<Int>,
     onValueChange: (Int) -> Unit,
+    formatter: (Int) -> String,
     modifier: Modifier = Modifier
 ) {
     Column(

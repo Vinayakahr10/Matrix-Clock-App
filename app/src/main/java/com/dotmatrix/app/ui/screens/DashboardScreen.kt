@@ -1,8 +1,11 @@
 package com.dotmatrix.app.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -27,10 +31,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.dotmatrix.app.ble.FirmwareWeatherState
 import com.dotmatrix.app.viewmodel.SharedConnectionViewModel
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +50,7 @@ fun DashboardScreen(
     val temperature by sharedViewModel.temperature.collectAsState()
     val humidity    by sharedViewModel.humidity.collectAsState()
     val currentMode by sharedViewModel.currentMode.collectAsState()
+    val weatherState by sharedViewModel.weatherState.collectAsState()
     val messageAnimationStyle by sharedViewModel.messageAnimationStyle.collectAsState()
     val haptic      = LocalHapticFeedback.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -62,29 +69,40 @@ fun DashboardScreen(
     val amPmFmt = DateTimeFormatter.ofPattern("a")
     val dateFmt = DateTimeFormatter.ofPattern("EEEE, MMMM dd")
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val headerAlpha by animateFloatAsState(
+        targetValue = if (scrollBehavior.state.collapsedFraction > 0.05f) 0.85f else 0f,
+        animationSpec = tween(150, easing = LinearEasing),
+        label = "headerAlpha"
+    )
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { 
-                    Text(
-                        "Matrix Control", 
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleLarge
-                    ) 
-                },
-                actions = {
-                    IconButton(onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        navController.navigate("settings")
-                    }) {
-                        Icon(Icons.Outlined.Settings, "Settings")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
+            Column(modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = headerAlpha))) {
+                LargeTopAppBar(
+                    title = { 
+                        Text(
+                            "Dashboard", 
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.displaySmall
+                        ) 
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            navController.navigate("settings")
+                        }) {
+                            Icon(Icons.Outlined.Settings, "Settings")
+                        }
+                    },
+                    scrollBehavior = scrollBehavior,
+                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = Color.Transparent
+                    )
                 )
-            )
+            }
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
@@ -106,14 +124,22 @@ fun DashboardScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
-                                    Color.Transparent
-                                )
+                        .let {
+                            val infiniteTransition = rememberInfiniteTransition(label = "bgSweep")
+                            val color1 by infiniteTransition.animateColor(
+                                initialValue = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+                                targetValue = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f),
+                                animationSpec = infiniteRepeatable(tween(3500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                                label = "c1"
                             )
-                        )
+                            val color2 by infiniteTransition.animateColor(
+                                initialValue = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.05f),
+                                targetValue = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                animationSpec = infiniteRepeatable(tween(4500, easing = FastOutLinearInEasing), RepeatMode.Reverse),
+                                label = "c2"
+                            )
+                            it.background(Brush.linearGradient(listOf(color1, color2)))
+                        }
                         .padding(vertical = 32.dp, horizontal = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -150,23 +176,45 @@ fun DashboardScreen(
             Spacer(Modifier.height(16.dp))
 
             // ── Room Environment Card ───────────────────────────────────────
-            EnvironmentCard(isConnected, temperature, humidity)
+            EnvironmentCard(
+                isConnected = isConnected,
+                temperature = temperature,
+                humidity = humidity,
+                weatherState = weatherState,
+                onSeeForecastClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    navController.navigate("weather")
+                }
+            )
 
             Spacer(Modifier.height(16.dp))
 
             // ── Connection Status Card ──────────────────────────────────────
             val statusColor = if (isConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.outline
             
+            var isConnPressed by remember { mutableStateOf(false) }
+            val connScale by animateFloatAsState(
+                targetValue = if (isConnPressed) 0.96f else 1f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+                label = "connScale"
+            )
+            LaunchedEffect(isConnPressed) {
+                if (isConnPressed) { delay(100); isConnPressed = false }
+            }
+            
             Card(
-                onClick = { 
+                onClick = {
+                    isConnPressed = true
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    navController.navigate("devices") 
+                    navController.navigate("devices")
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { scaleX = connScale; scaleY = connScale },
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = if (isConnected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                    else MaterialTheme.colorScheme.surface
+                                     else MaterialTheme.colorScheme.surface
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
@@ -174,19 +222,16 @@ fun DashboardScreen(
                     modifier = Modifier.padding(20.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        color = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = CircleShape,
-                        modifier = Modifier.size(48.dp)
+                    Box(
+                        modifier = Modifier.size(48.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = if (isConnected) Icons.Outlined.BluetoothConnected else Icons.Outlined.BluetoothDisabled,
-                                contentDescription = null,
-                                tint = if (isConnected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        Icon(
+                            imageVector = if (isConnected) Icons.Outlined.BluetoothConnected else Icons.Outlined.BluetoothDisabled,
+                            contentDescription = null,
+                            tint = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                     
                     Spacer(Modifier.width(16.dp))
@@ -298,6 +343,19 @@ fun DashboardScreen(
                 )
                 QuickControlCard(
                     modifier = Modifier.weight(1f),
+                    label = "Clock Faces",
+                    icon = Icons.Outlined.Watch,
+                    enabled = isConnected,
+                    onClick = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        navController.navigate("faces") 
+                    }
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                QuickControlCard(
+                    modifier = Modifier.weight(1f),
                     label = "Visualizer",
                     icon = Icons.Outlined.AutoGraph,
                     onClick = { 
@@ -305,9 +363,30 @@ fun DashboardScreen(
                         navController.navigate("visualizer") 
                     }
                 )
+                QuickControlCard(
+                    modifier = Modifier.weight(1f),
+                    label = "DextBot",
+                    icon = Icons.Outlined.Pets,
+                    enabled = isConnected,
+                    onClick = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        navController.navigate("dextbot") 
+                    }
+                )
             }
             Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                QuickControlCard(
+                    modifier = Modifier.weight(1f),
+                    label = "Games",
+                    icon = Icons.Outlined.Games,
+                    enabled = isConnected,
+                    onClick = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        navController.navigate("games") 
+                    }
+                )
                 QuickControlCard(
                     modifier = Modifier.weight(1f),
                     label = "Sync Time",
@@ -318,6 +397,10 @@ fun DashboardScreen(
                         sharedViewModel.sendCurrentTimeSync() 
                     }
                 )
+            }
+            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 QuickControlCard(
                     modifier = Modifier.weight(1f),
                     label = "Firmware",
@@ -327,6 +410,7 @@ fun DashboardScreen(
                         navController.navigate("ota") 
                     }
                 )
+                Spacer(Modifier.weight(1f))
             }
             Spacer(Modifier.height(32.dp))
         }
@@ -349,188 +433,312 @@ private fun VirtualControlCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
+                .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Header & Active Mode Indicator
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        "Virtual Controls",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        if (isConnected) "Mirror the ESP32 buttons from your phone"
-                        else "Connect your clock to enable navigation buttons",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Virtual Controls",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    if (isConnected) {
+                        val normalizedMode = currentMode.trim().uppercase().ifEmpty { "CLOCK" }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                            val alpha by infiniteTransition.animateFloat(
+                                initialValue = 0.4f,
+                                targetValue = 1f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(800, easing = FastOutSlowInEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                ),
+                                label = "alpha"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha))
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Mode: $normalizedMode",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    } else {
+                        Text(
+                            "Connect your clock to enable controls",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                FilledTonalButton(
+                FilledTonalIconButton(
                     onClick = onRequestMode,
-                    enabled = isConnected
+                    enabled = isConnected,
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    Text("Refresh Mode")
+                    Icon(Icons.Outlined.Refresh, "Refresh Mode", modifier = Modifier.size(20.dp))
                 }
             }
 
-            ModeChips(currentMode = currentMode)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
+            // 4-Way D-Pad Remote Layout
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ControlButton(
-                    label = "Mode",
+                DpadButton(
+                    icon = Icons.Outlined.CompareArrows,
+                    label = "MODE",
                     modifier = Modifier.weight(1f),
                     enabled = isConnected,
                     onClick = { onButtonPress("MODE") }
                 )
-                ControlButton(
-                    label = "Next",
+                DpadButton(
+                    icon = Icons.Outlined.SkipNext,
+                    label = "NEXT",
                     modifier = Modifier.weight(1f),
                     enabled = isConnected,
                     onClick = { onButtonPress("NEXT") }
                 )
             }
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ControlButton(
-                    label = "Back",
+                DpadButton(
+                    icon = Icons.Outlined.Undo,
+                    label = "BACK",
                     modifier = Modifier.weight(1f),
                     enabled = isConnected,
                     onClick = { onButtonPress("BACK") }
                 )
-                ControlButton(
-                    label = "OK",
+                DpadButton(
+                    icon = Icons.Outlined.CheckCircleOutline,
+                    label = "SELECT",
                     modifier = Modifier.weight(1f),
                     enabled = isConnected,
                     onClick = { onButtonPress("SELECT") }
                 )
             }
 
-            OutlinedTextField(
-                value = messageText,
-                onValueChange = onMessageChange,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = isConnected,
-                label = { Text("Message mode text") },
-                placeholder = { Text("Type a message for the display") },
-                singleLine = true
-            )
+            Spacer(Modifier.height(8.dp))
 
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+            // Message Configuration Box
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    "Animation Style",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                val animationOptions = listOf(
-                    "NONE" to "None",
-                    "WAVE" to "Wave",
-                    "SCROLL" to "Scroll",
-                    "RAIN" to "Rain"
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    animationOptions.forEach { (value, label) ->
-                        FilterChip(
-                            selected = messageAnimationStyle == value,
-                            onClick = { onMessageAnimationSelect(value) },
-                            enabled = isConnected,
-                            label = { Text(label) }
+                    Text(
+                        "Message Broadcaster",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    TextField(
+                        value = messageText,
+                        onValueChange = onMessageChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = isConnected,
+                        placeholder = { Text("Display text...") },
+                        singleLine = true,
+                        shape = CircleShape,
+                        colors = TextFieldDefaults.colors(
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent,
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
                         )
+                    )
+
+                    // Unified Segmented Selectors for Animation
+                    val animationOptions = listOf(
+                        Triple("NONE", "None", Icons.Outlined.Title),
+                        Triple("WAVE", "Wave", Icons.Outlined.Waves),
+                        Triple("SCROLL", "Scroll", Icons.Outlined.SyncAlt),
+                        Triple("RAIN", "Rain", Icons.Outlined.Grain)
+                    )
+                    
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shadowElevation = 2.dp
+                    ) {
+                        Box(modifier = Modifier.padding(4.dp)) {
+                            val selectedIndex = animationOptions.indexOfFirst { it.first == messageAnimationStyle }.coerceAtLeast(0)
+                            
+                            BoxWithConstraints(modifier = Modifier.matchParentSize()) {
+                                val tabWidth = maxWidth / animationOptions.size
+                                val indicatorOffset by animateDpAsState(
+                                    targetValue = tabWidth * selectedIndex,
+                                    animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+                                    label = "indicatorOffset"
+                                )
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = indicatorOffset)
+                                        .width(tabWidth)
+                                        .fillMaxHeight()
+                                        .background(MaterialTheme.colorScheme.surface, CircleShape)
+                                )
+                            }
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                animationOptions.forEach { (style, label, icon) ->
+                                    val isSelected = messageAnimationStyle == style
+                                    val textColor by animateColorAsState(
+                                        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, 
+                                        animationSpec = tween(durationMillis = 250),
+                                        label = "text"
+                                    )
+                                    
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(CircleShape)
+                                            .clickable(
+                                                enabled = isConnected,
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null
+                                            ) { onMessageAnimationSelect(style) }
+                                            .padding(vertical = 12.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = label,
+                                            tint = if (isConnected) textColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(0.3f),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isConnected) textColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(0.3f),
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = onSendMessage,
+                            enabled = isConnected && messageText.trim().isNotEmpty(),
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Outlined.Send, "Send", modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Broadcast", fontWeight = FontWeight.Bold)
+                        }
+                        FilledTonalButton(
+                            onClick = onTimeSync,
+                            enabled = isConnected,
+                            modifier = Modifier.height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Outlined.Restore, "Sync Time", modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = onSendMessage,
-                    enabled = isConnected && messageText.trim().isNotEmpty(),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Send Message")
-                }
-                OutlinedButton(
-                    onClick = onTimeSync,
-                    enabled = isConnected,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Sync Time")
-                }
-            }
         }
     }
 }
 
 @Composable
-private fun ModeChips(currentMode: String) {
-    val normalizedMode = currentMode.trim().uppercase().ifEmpty { "CLOCK" }
-    val modes = listOf("CLOCK", "MESSAGE", "VISUALIZER")
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        modes.forEach { mode ->
-            FilterChip(
-                selected = normalizedMode == mode,
-                onClick = {},
-                enabled = false,
-                label = { Text(mode.lowercase().replaceFirstChar { it.uppercase() }) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun ControlButton(
+private fun DpadButton(
+    icon: ImageVector,
     label: String,
     modifier: Modifier = Modifier,
     enabled: Boolean,
     onClick: () -> Unit
 ) {
-    FilledTonalButton(
+    Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(52.dp),
-        shape = RoundedCornerShape(16.dp)
+        modifier = modifier.height(64.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha=0.6f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f),
+        tonalElevation = if (enabled) 1.dp else 0.dp
     ) {
-        Text(label, fontWeight = FontWeight.SemiBold)
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha=0.4f),
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                label,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha=0.4f)
+            )
+        }
     }
 }
 
 @Composable
-private fun EnvironmentCard(isConnected: Boolean, temperature: Float?, humidity: Float?) {
+private fun EnvironmentCard(
+    isConnected: Boolean, 
+    temperature: Float?, 
+    humidity: Float?,
+    weatherState: FirmwareWeatherState,
+    onSeeForecastClick: () -> Unit = {}
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
@@ -543,100 +751,127 @@ private fun EnvironmentCard(isConnected: Boolean, temperature: Float?, humidity:
                 )
                 .padding(20.dp)
         ) {
-            Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Outlined.DeviceThermostat,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Environment",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            if (!isConnected) {
+                Text(
+                    "Connect to view sensor data",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            } else {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Indoor Pill
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("INDOOR", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(4.dp))
+                            if (temperature == null || humidity == null) {
+                                Text("Loading...", style = MaterialTheme.typography.bodyMedium)
+                            } else {
+                                Text(
+                                    text = "${temperature.toInt()}°C",
+                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = "Humidity ${humidity.toInt()}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Outdoor Pill
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("OUTDOOR", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(4.dp))
+                            if (weatherState.temp.isNaN()) {
+                                Text("No data", style = MaterialTheme.typography.bodyMedium)
+                            } else {
+                                Text(
+                                    text = "${weatherState.temp.toInt()}°C",
+                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    text = "${weatherState.condition} in ${weatherState.city}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── See Forecast Link ─────────────────────────────────────────
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSeeForecastClick() },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Outlined.DeviceThermostat,
+                        imageVector = Icons.Outlined.WbSunny,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        "Room Environment",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                if (!isConnected) {
-                    Text(
-                        "Connect to view sensor data",
+                        "7-Day Forecast",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
-                } else if (temperature == null || humidity == null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            "Reading sensor...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "${temperature.toInt()}°C",
-                                style = MaterialTheme.typography.displaySmall.copy(
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 32.sp
-                                )
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            val indicatorColor = when {
-                                temperature > 30f -> Color(0xFFEF4444) // Red
-                                temperature < 18f -> Color(0xFF3B82F6) // Blue
-                                else -> Color(0xFF10B981) // Green
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(indicatorColor)
-                            )
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Outlined.WaterDrop,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = "${humidity.toInt()}%",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Text(
-                        "Room Temperature",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(top = 4.dp)
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
                     )
                 }
+                Icon(
+                    imageVector = Icons.Outlined.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }
 }
+
 
 @Composable
 private fun QuickControlCard(
@@ -646,12 +881,26 @@ private fun QuickControlCard(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "quickCtrlScale"
+    )
+    LaunchedEffect(isPressed) {
+        if (isPressed) { delay(100); isPressed = false }
+    }
+
     Surface(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.height(110.dp),
+        modifier = modifier
+            .height(110.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(enabled = enabled) {
+                isPressed = true
+                onClick()
+            },
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = if (enabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
         tonalElevation = 1.dp,
         shadowElevation = 0.5.dp
     ) {
@@ -660,7 +909,7 @@ private fun QuickControlCard(
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Surface(
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                color = if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.size(40.dp)
             ) {
@@ -668,7 +917,7 @@ private fun QuickControlCard(
                     Icon(
                         imageVector = icon, 
                         contentDescription = null, 
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -676,7 +925,8 @@ private fun QuickControlCard(
             Text(
                 text = label, 
                 style = MaterialTheme.typography.labelLarge, 
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
             )
         }
     }

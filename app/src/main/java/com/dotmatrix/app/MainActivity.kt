@@ -48,13 +48,9 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode  by settingsViewModel.themeMode.collectAsState()
-            val fontSize   by settingsViewModel.fontSize.collectAsState()
-            val fontFamily by settingsViewModel.fontFamily.collectAsState()
 
             DotMatrixAppTheme(
-                themeMode  = themeMode,
-                fontSize   = fontSize,
-                fontFamily = fontFamily
+                themeMode  = themeMode
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

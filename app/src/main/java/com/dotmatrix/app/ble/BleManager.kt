@@ -66,6 +66,24 @@ data class FirmwareStopwatchState(
     val lastLap: String? = null
 )
 
+data class FirmwareWeatherState(
+    val temp: Float = Float.NaN,
+    val feelsLike: Float = Float.NaN,
+    val condition: String = "",
+    val humidity: Int = 0,
+    val city: String = "",
+    val isFresh: Boolean = false
+)
+
+data class FirmwareDextBotState(
+    val distance: Int = 0,
+    val accelX: Int = 0,
+    val accelY: Int = 0,
+    val accelZ: Int = 0,
+    val mpuOk: Boolean = false,
+    val vl53Ok: Boolean = false
+)
+
 class BleManager(private val context: Context) {
     companion object {
         private const val TAG = "BleManager"
@@ -181,6 +199,12 @@ class BleManager(private val context: Context) {
     private val _stopwatchState = MutableStateFlow(FirmwareStopwatchState())
     val stopwatchState: StateFlow<FirmwareStopwatchState> = _stopwatchState.asStateFlow()
 
+    private val _weatherState = MutableStateFlow(FirmwareWeatherState())
+    val weatherState: StateFlow<FirmwareWeatherState> = _weatherState.asStateFlow()
+
+    private val _dextBotState = MutableStateFlow(FirmwareDextBotState())
+    val dextBotState: StateFlow<FirmwareDextBotState> = _dextBotState.asStateFlow()
+
     private val _visualizerSource = MutableStateFlow("DEVICE")
     val visualizerSource: StateFlow<String> = _visualizerSource.asStateFlow()
 
@@ -189,6 +213,9 @@ class BleManager(private val context: Context) {
 
     private val _messageAnimationStyle = MutableStateFlow("NONE")
     val messageAnimationStyle: StateFlow<String> = _messageAnimationStyle.asStateFlow()
+
+    private val _currentFace = MutableStateFlow("CLASSIC")
+    val currentFace: StateFlow<String> = _currentFace.asStateFlow()
 
     private val _deviceEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val deviceEvents: SharedFlow<String> = _deviceEvents
@@ -765,6 +792,8 @@ class BleManager(private val context: Context) {
                     delay(300)
                     writeDataSync("SENSOR?")
                     delay(300)
+                    writeDataSync("WEATHER?")
+                    delay(300)
                     writeDataSync("OTA_STATUS")
                     delay(300)
                     writeDataSync("TIMEFMT?")
@@ -774,6 +803,8 @@ class BleManager(private val context: Context) {
                     writeDataSync("VIZSTYLE?")
                     delay(300)
                     writeDataSync("MSGANIM?")
+                    delay(300)
+                    writeDataSync("FACE?")
                 }
             } else {
                 _error.value = BleError.SERVICE_NOT_FOUND
@@ -862,6 +893,10 @@ class BleManager(private val context: Context) {
                                 _deviceEvents.tryEmit("Invalid time format selected")
                             }
                             "SECURE" -> _deviceEvents.tryEmit("Connection secured")
+                            "WEATHER_UPDATED" -> _deviceEvents.tryEmit("Weather updated on your clock")
+                            "WEATHER_CLEARED" -> _deviceEvents.tryEmit("Weather cleared from your clock")
+                            "FACE_UPDATED" -> _deviceEvents.tryEmit("Lockscreen Face updated")
+                            "FACE_INVALID" -> _deviceEvents.tryEmit("Lockscreen Face was rejected")
                         }
                     }
                     msg.startsWith("VIZSRC:") -> {
@@ -880,6 +915,12 @@ class BleManager(private val context: Context) {
                         val style = msg.removePrefix("MSGANIM:").trim().uppercase()
                         if (style == "NONE" || style == "WAVE" || style == "SCROLL" || style == "RAIN") {
                             _messageAnimationStyle.value = style
+                        }
+                    }
+                    msg.startsWith("FACE:") -> {
+                        val face = msg.removePrefix("FACE:").trim().uppercase()
+                        if (face.isNotEmpty()) {
+                            _currentFace.value = face
                         }
                     }
                     msg.startsWith("TIMEFMT:") -> {
@@ -975,6 +1016,55 @@ class BleManager(private val context: Context) {
                             }
                         }
                     }
+                    msg.startsWith("WEATHER:") -> {
+                        // WEATHER:T:22.5,F:20.1,C:Rain,H:65,CITY:London,FRESH:1
+                        val parts = msg.removePrefix("WEATHER:").split(",")
+                        var temp = Float.NaN
+                        var feelsLike = Float.NaN
+                        var condition = ""
+                        var humidity = 0
+                        var city = ""
+                        var isFresh = false
+                        
+                        parts.forEach { part ->
+                            val kv = part.trim().split(":")
+                            if (kv.size == 2) {
+                                val k = kv[0].trim()
+                                val v = kv[1].trim()
+                                when (k) {
+                                    "T" -> temp = v.toFloatOrNull() ?: Float.NaN
+                                    "F" -> feelsLike = v.toFloatOrNull() ?: Float.NaN
+                                    "C" -> condition = v
+                                    "H" -> humidity = v.toIntOrNull() ?: 0
+                                    "CITY" -> city = v
+                                    "FRESH" -> isFresh = v == "1"
+                                }
+                            }
+                        }
+                        _weatherState.value = FirmwareWeatherState(temp, feelsLike, condition, humidity, city, isFresh)
+                    }
+                    msg.startsWith("DEXTBOT:") -> {
+                        // DEXTBOT:DIST:u,AX:d,AY:d,AZ:d,MPU:OK,VL53:OK
+                        val parts = msg.removePrefix("DEXTBOT:").split(",")
+                        var dist = 0
+                        var ax = 0; var ay = 0; var az = 0
+                        var mpu = false; var vl53 = false
+                        parts.forEach { part ->
+                            val kv = part.trim().split(":")
+                            if (kv.size == 2) {
+                                val v = kv[1].trim()
+                                when (kv[0].trim()) {
+                                    "DIST" -> dist = v.toIntOrNull() ?: 0
+                                    "AX" -> ax = v.toIntOrNull() ?: 0
+                                    "AY" -> ay = v.toIntOrNull() ?: 0
+                                    "AZ" -> az = v.toIntOrNull() ?: 0
+                                    "MPU" -> mpu = v == "OK"
+                                    "VL53" -> vl53 = v == "OK"
+                                }
+                            }
+                        }
+                        _dextBotState.value = FirmwareDextBotState(dist, ax, ay, az, mpu, vl53)
+                    }
                     msg.startsWith("INFO:") -> {
                         // INFO:NAME:DotMatrix Clock,MODEL:DM-CLOCK-01,FW:v1.0.1-dev,BAT:100,T:27.4,H:61.0
                         val infoParts = msg.removePrefix("INFO:").split(",")
@@ -994,7 +1084,7 @@ class BleManager(private val context: Context) {
                                          }
                                     }
                                     "BAT" -> _batteryLevel.value = value.toIntOrNull()
-                                    "BRIGHT" -> _brightnessValue.value = value.toIntOrNull()
+                                    "BR" -> _brightnessValue.value = value.toIntOrNull()
                                     "T" -> _temperature.value = value.toFloatOrNull()
                                     "H" -> _humidity.value = value.toFloatOrNull()
                                     "CTOOL" -> {
@@ -1003,6 +1093,22 @@ class BleManager(private val context: Context) {
                                             _currentClockTool.value = normalizedTool
                                         }
                                     }
+                                    "MODE" -> _currentMode.value = value.uppercase()
+                                    "TF" -> {
+                                        _deviceTimeFormat24.value = value == "24"
+                                    }
+                                    "WT" -> {
+                                        val existing = _weatherState.value
+                                        _weatherState.value = existing.copy(temp = value.toFloatOrNull() ?: Float.NaN)
+                                    }
+                                    "WC" -> {
+                                        val existing = _weatherState.value
+                                        _weatherState.value = existing.copy(condition = value)
+                                    }
+                                    "WCITY" -> {
+                                        val existing = _weatherState.value
+                                        _weatherState.value = existing.copy(city = value)
+                                    }
                                 }
                             }
                         }
@@ -1010,6 +1116,20 @@ class BleManager(private val context: Context) {
                     }
                     msg.startsWith("BATTERY:") -> {
                         _batteryLevel.value = msg.removePrefix("BATTERY:").trim().toIntOrNull()
+                    }
+                    msg.startsWith("GESTURE:") -> {
+                        val gesture = msg.removePrefix("GESTURE:").trim()
+                        _deviceEvents.tryEmit("Gesture detected: $gesture")
+                    }
+                    msg.startsWith("PONG:SCORE,") -> {
+                        val parts = msg.removePrefix("PONG:SCORE,").split(",")
+                        if (parts.size == 2) {
+                            _deviceEvents.tryEmit("Pong Score - L: ${parts[0]} R: ${parts[1]}")
+                        }
+                    }
+                    msg.startsWith("DODGE:GAMEOVER,") -> {
+                        val score = msg.removePrefix("DODGE:GAMEOVER,").trim()
+                        _deviceEvents.tryEmit("Dodge Game Over! Score: ${score}s")
                     }
                     msg.startsWith("ECHO:") -> {
                         Log.d(TAG, "Echo received: ${msg.removePrefix("ECHO:").trim()}")

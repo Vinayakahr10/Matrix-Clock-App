@@ -1,10 +1,11 @@
 {
-  "versionName": "1.0.2",
-  "versionCode": 3,
-  "apkUrl": "https://github.com/Vinayakahr10/Matrix-Clock-App/releases/download/v1.0.2/app-release.apk",
+  "versionName": "1.0.3",
+  "versionCode": 4,
+  "apkUrl": "https://github.com/Vinayakahr10/Matrix-Clock-App/releases/download/v1.0.3/app-release.apk",
   "notes": [
+    "Added premium 'Lockscreen Faces' feature with customizable pixel-art clock themes.",
+    "Integrated a comprehensive 7-day weather forecast with current, hourly, and daily insights.",
     "Improved timer and stopwatch control syncing with firmware.",
-    "Improved auto reconnect and automatic time sync behavior.",
-    "Improved background phone-mic visualizer support and saved settings restore."
+    "Improved auto reconnect and automatic time sync behavior."
   ]
 }

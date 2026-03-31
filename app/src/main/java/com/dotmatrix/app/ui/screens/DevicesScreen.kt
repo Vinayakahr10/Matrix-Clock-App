@@ -1,9 +1,12 @@
 package com.dotmatrix.app.ui.screens
 
+import kotlinx.coroutines.delay
 import androidx.compose.animation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,8 +20,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,134 +65,219 @@ fun DevicesScreen(sharedViewModel: SharedConnectionViewModel) {
         }
     }
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val headerAlpha by animateFloatAsState(
+        targetValue = if (scrollBehavior.state.collapsedFraction > 0.05f) 0.85f else 0f,
+        animationSpec = tween(150, easing = LinearEasing),
+        label = "headerAlpha"
+    )
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title  = { Text("Bluetooth Devices", fontWeight = FontWeight.SemiBold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-            )
+            Column(modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = headerAlpha))) {
+                LargeTopAppBar(
+                    title = { 
+                        Text(
+                            "Devices", 
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.displaySmall
+                        ) 
+                    },
+                    scrollBehavior = scrollBehavior,
+                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = Color.Transparent
+                    )
+                )
+            }
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
+                .padding(padding),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Scan Control Card
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            item {
+                // Scan Control Hero Block
+                val infiniteTransition = rememberInfiniteTransition(label = "scanSweep")
+                val gradientColors = if (isScanning) {
+                    val color1 by infiniteTransition.animateColor(
+                        initialValue = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        targetValue = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f),
+                        animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                        label = "c1"
+                    )
+                    val color2 by infiniteTransition.animateColor(
+                        initialValue = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f),
+                        targetValue = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                        animationSpec = infiniteRepeatable(tween(3000, easing = FastOutLinearInEasing), RepeatMode.Reverse),
+                        label = "c2"
+                    )
+                    listOf(color1, color2)
+                } else {
+                    listOf(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Brush.linearGradient(gradientColors))
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (isScanning) "Searching..." else "Discovery Stopped",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = if (isScanning) "Finding nearby Dot Matrix clocks" else "Tap to start searching",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    
-                    if (isScanning) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 3.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else {
-                        IconButton(
-                            onClick = { 
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                sharedViewModel.startScan() 
-                            },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                    Row(
+                        modifier = Modifier.padding(24.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isScanning) "Searching..." else "Discovery Stopped",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isScanning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                             )
-                        ) {
-                            Icon(Icons.Outlined.Refresh, contentDescription = "Scan")
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = if (isScanning) "Locating nearby Dot Matrix units" else "Tap to start searching",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        
+                        if (isScanning) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            var isRefreshPressed by remember { mutableStateOf(false) }
+                            val refreshScale by animateFloatAsState(
+                                targetValue = if (isRefreshPressed) 0.85f else 1f,
+                                animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+                                label = "refreshScale"
+                            )
+                            LaunchedEffect(isRefreshPressed) {
+                                if (isRefreshPressed) { delay(150); isRefreshPressed = false }
+                            }
+
+                            Surface(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .graphicsLayer { scaleX = refreshScale; scaleY = refreshScale }
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) { 
+                                        isRefreshPressed = true
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        sharedViewModel.startScan() 
+                                    },
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                shadowElevation = 4.dp
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Outlined.Refresh, contentDescription = "Scan", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(28.dp))
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // Room Temp Highlight (shown when connected)
+            // Room Temp Highlight (shoown when connected)
             if (isConnected && temperature != null) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Outlined.DeviceThermostat, 
-                            contentDescription = null, 
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = "Room Temp: ${temperature?.toInt()}°C • Humidity: ${humidity?.toInt()}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                item {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Indoor Pill
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.DeviceThermostat, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("ROOM TEMP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "${temperature?.toInt()}°C",
+                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+
+                        // Humidity Pill
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.WaterDrop, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("HUMIDITY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "${humidity?.toInt()}%",
+                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
                     }
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-
             if (scannedDevices.isEmpty() && !isScanning) {
-                EmptyStateCard(
-                    icon     = Icons.Outlined.BluetoothSearching,
-                    title    = "No Clocks Found",
-                    subtitle = "Ensure your clock is powered on and nearby"
-                )
+                item {
+                    Spacer(Modifier.height(16.dp))
+                    EmptyStateCard(
+                        icon     = Icons.Outlined.BluetoothSearching,
+                        title    = "No Clocks Found",
+                        subtitle = "Ensure your clock is powered on and within range"
+                    )
+                }
             } else {
-                Text(
-                    "Available Devices (${scannedDevices.size})",
-                    style    = MaterialTheme.typography.labelLarge,
-                    color    = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 12.dp, top = 8.dp)
-                )
+                item {
+                    Text(
+                        "Available Devices (${scannedDevices.size})",
+                        style    = MaterialTheme.typography.labelLarge,
+                        color    = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 4.dp, top = 16.dp)
+                    )
+                }
                 
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
-                ) {
-                    items(
-                        items = scannedDevices,
-                        key = { it.device.address }
-                    ) { scanned ->
-                        val isThisConnected = isConnected && (scanned.device.address == connectedDevice || scanned.displayName == connectedDevice)
-                        
-                        DeviceRow(
-                            name = scanned.displayName,
-                            address = scanned.device.address,
-                            rssi = scanned.rssi,
-                            isConnected = isThisConnected,
-                            onConnect = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                if (isThisConnected) sharedViewModel.disconnect()
-                                else sharedViewModel.connect(scanned.device)
-                            }
-                        )
-                    }
+                items(
+                    items = scannedDevices,
+                    key = { it.device.address }
+                ) { scanned ->
+                    val isThisConnected = isConnected && (scanned.device.address == connectedDevice || scanned.displayName == connectedDevice)
+                    
+                    DeviceRow(
+                        name = scanned.displayName,
+                        address = scanned.device.address,
+                        rssi = scanned.rssi,
+                        isConnected = isThisConnected,
+                        onConnect = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (isThisConnected) sharedViewModel.disconnect()
+                            else sharedViewModel.connect(scanned.device)
+                        }
+                    )
                 }
             }
         }
@@ -203,71 +294,112 @@ private fun DeviceRow(
 ) {
     val isStrongSignal = rssi > -60
     
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "devScale"
+    )
+    LaunchedEffect(isPressed) {
+        if (isPressed) { delay(150); isPressed = false }
+    }
+
+    val bgBrush = if (isConnected) {
+        val infiniteTransition = rememberInfiniteTransition(label = "connSweep")
+        val c1 by infiniteTransition.animateColor(
+            initialValue = Color(0xFF10B981).copy(alpha = 0.15f),
+            targetValue = Color(0xFF0EA5E9).copy(alpha = 0.25f),
+            animationSpec = infiniteRepeatable(tween(3500, easing = LinearEasing), RepeatMode.Reverse),
+            label = "bc1"
+        )
+        val c2 by infiniteTransition.animateColor(
+            initialValue = Color(0xFF0EA5E9).copy(alpha = 0.05f),
+            targetValue = Color(0xFF10B981).copy(alpha = 0.15f),
+            animationSpec = infiniteRepeatable(tween(4500, easing = LinearEasing), RepeatMode.Reverse),
+            label = "bc2"
+        )
+        Brush.linearGradient(listOf(c1, c2))
+    } else {
+        Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isConnected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) 
-                            else MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isConnected) 0.dp else 2.dp),
-        border = if (isConnected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Signal Strength Icon
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.SignalCellularAlt,
-                    contentDescription = null,
-                    tint = when {
-                        isConnected -> MaterialTheme.colorScheme.primary
-                        isStrongSignal -> Color(0xFF4CAF50) // Green
-                        rssi > -80 -> Color(0xFFFFC107) // Amber
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    },
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            
-            Spacer(Modifier.width(16.dp))
-            
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = name,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (name == "Unknown Device") MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = address,
-                    style = MaterialTheme.typography.bodySmall.copy(letterSpacing = 0.5.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            Button(
-                onClick = onConnect,
-                shape = RoundedCornerShape(12.dp),
-                colors = if (isConnected) {
-                    ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                } else {
-                    ButtonDefaults.buttonColors()
-                },
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                modifier = Modifier.height(38.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
             ) {
-                Text(
-                    text = if (isConnected) "Disconnect" else "Connect",
-                    style = MaterialTheme.typography.labelLarge
-                )
+                isPressed = true
+                onConnect()
+            },
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isConnected) 4.dp else 1.dp),
+        border = if (isConnected) BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.3f)) else null
+    ) {
+        Box(
+            modifier = Modifier
+                .background(bgBrush)
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 24.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Signal Strength Icon
+                Surface(
+                    shape = CircleShape,
+                    color = if (isConnected) Color(0xFF10B981).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.SignalCellularAlt,
+                            contentDescription = null,
+                            tint = when {
+                                isConnected -> Color(0xFF10B981)
+                                isStrongSignal -> Color(0xFF4CAF50) // Green
+                                rssi > -80 -> Color(0xFFFFC107) // Amber
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            },
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                
+                Spacer(Modifier.width(16.dp))
+                
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = name,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (name == "Unknown Device") MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = address,
+                        style = MaterialTheme.typography.bodySmall.copy(letterSpacing = 0.5.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Surface(
+                    shape = CircleShape,
+                    color = if (isConnected) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+                    shadowElevation = 0.dp
+                ) {
+                    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = if (isConnected) "Disconnect" else "Connect",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isConnected) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
             }
         }
     }

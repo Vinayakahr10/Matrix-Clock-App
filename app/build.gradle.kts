@@ -66,6 +66,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
 
+    // Location (for weather GPS)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
     // DataStore (persistent preferences)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 

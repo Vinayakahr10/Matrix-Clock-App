@@ -10,13 +10,10 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
-import com.dotmatrix.app.viewmodel.FontFamilyOption
-import com.dotmatrix.app.viewmodel.FontSizeOption
 import com.dotmatrix.app.viewmodel.ThemeMode
 
 // ── Color schemes ─────────────────────────────────────────────────────────────
@@ -86,8 +83,6 @@ private val PitchDarkColorScheme = darkColorScheme(
 @Composable
 fun DotMatrixAppTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
-    fontSize: FontSizeOption = FontSizeOption.MEDIUM,
-    fontFamily: FontFamilyOption = FontFamilyOption.DEFAULT,
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
@@ -143,25 +138,20 @@ fun DotMatrixAppTheme(
         }
     }
 
-    val typography = remember(fontSize, fontFamily) { buildTypography(fontSize, fontFamily) }
-
     MaterialTheme(
         colorScheme = colorScheme,
-        typography  = typography,
+        typography  = Typography,
         content     = content
     )
 }
 
 // ── Extension ─────────────────────────────────────────────────────────────────
-// Keep backward compat — old call sites that pass no args still compile.
 @Composable
 fun DotMatrixAppTheme(
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) = DotMatrixAppTheme(
     themeMode   = ThemeMode.SYSTEM,
-    fontSize    = FontSizeOption.MEDIUM,
-    fontFamily  = FontFamilyOption.DEFAULT,
     dynamicColor = dynamicColor,
     content      = content
 )

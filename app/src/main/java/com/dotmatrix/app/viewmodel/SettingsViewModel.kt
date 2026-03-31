@@ -3,6 +3,7 @@ package com.dotmatrix.app.viewmodel
 import android.app.Application
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -24,9 +25,9 @@ import kotlinx.coroutines.launch
 private val Application.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK, PITCH_DARK }
-enum class FontSizeOption { SMALL, MEDIUM, LARGE }
-enum class FontFamilyOption { DEFAULT, SERIF, MONOSPACE, ROUNDED }
 enum class AppUpdateStatus { CHECKING, UP_TO_DATE, UPDATE_AVAILABLE, ERROR }
+enum class FontSizeOption { SMALL, MEDIUM, LARGE }
+enum class FontFamilyOption { DEFAULT }
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -37,8 +38,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     companion object {
         private val KEY_THEME = stringPreferencesKey("theme_mode")
         private val KEY_FONT_SIZE = stringPreferencesKey("font_size")
-        private val KEY_FONT_STYLE = stringPreferencesKey("font_family")
+        private val KEY_FONT_FAMILY = stringPreferencesKey("font_family")
         private val KEY_LAST_NOTIFIED_APP_VERSION = longPreferencesKey("last_notified_app_version")
+        private val KEY_DEVELOPER_MODE = booleanPreferencesKey("developer_mode")
     }
 
     val themeMode: StateFlow<ThemeMode> = dataStore.data
@@ -55,9 +57,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val fontFamily: StateFlow<FontFamilyOption> = dataStore.data
         .map { prefs ->
-            FontFamilyOption.values().firstOrNull { it.name == prefs[KEY_FONT_STYLE] } ?: FontFamilyOption.DEFAULT
+            FontFamilyOption.values().firstOrNull { it.name == prefs[KEY_FONT_FAMILY] } ?: FontFamilyOption.DEFAULT
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, FontFamilyOption.DEFAULT)
+
+    val isDeveloperModeEnabled: StateFlow<Boolean> = dataStore.data
+        .map { prefs -> prefs[KEY_DEVELOPER_MODE] ?: false }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _installedVersionName = MutableStateFlow(appUpdateManager.getInstalledVersionName())
     val installedVersionName: StateFlow<String> = _installedVersionName.asStateFlow()
@@ -71,6 +77,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _appUpdateError = MutableStateFlow<String?>(null)
     val appUpdateError: StateFlow<String?> = _appUpdateError.asStateFlow()
 
+    private val _versionTapCount = MutableStateFlow(0)
+    val versionTapCount: StateFlow<Int> = _versionTapCount.asStateFlow()
+
     init {
         refreshAppUpdateStatus()
     }
@@ -81,15 +90,31 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun setFontSize(size: FontSizeOption) {
+    fun setFontSize(option: FontSizeOption) {
         viewModelScope.launch {
-            dataStore.edit { prefs -> prefs[KEY_FONT_SIZE] = size.name }
+            dataStore.edit { prefs -> prefs[KEY_FONT_SIZE] = option.name }
         }
     }
 
-    fun setFontFamily(family: FontFamilyOption) {
+    fun setFontFamily(option: FontFamilyOption) {
         viewModelScope.launch {
-            dataStore.edit { prefs -> prefs[KEY_FONT_STYLE] = family.name }
+            dataStore.edit { prefs -> prefs[KEY_FONT_FAMILY] = option.name }
+        }
+    }
+
+    fun setDeveloperModeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            dataStore.edit { prefs -> prefs[KEY_DEVELOPER_MODE] = enabled }
+        }
+        if (!enabled) _versionTapCount.value = 0
+    }
+
+    fun incrementVersionTap() {
+        if (isDeveloperModeEnabled.value) return
+        _versionTapCount.value++
+        if (_versionTapCount.value >= 7) {
+            setDeveloperModeEnabled(true)
+            _versionTapCount.value = 0
         }
     }
 
